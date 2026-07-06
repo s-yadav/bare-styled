@@ -1,0 +1,31 @@
+{
+  "name": "just-styled",
+  "version": "0.1.0",
+  "description": "Runtime for just-styled, the compile-time styled-components babel plugin",
+  "license": "MIT",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./runtime": "./src/index.js",
+    "./runtime/patch": "./src/patch.js",
+    "./jsx-runtime": "./src/jsx-runtime.js",
+    "./jsx-dev-runtime": "./src/jsx-dev-runtime.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "dependencies": {
+    "@emotion/is-prop-valid": "^1.4.0"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "styled-components": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "styled-components": {
+      "optional": true
+    }
+  }
+}

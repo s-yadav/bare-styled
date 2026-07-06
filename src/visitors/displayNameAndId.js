@@ -172,7 +172,7 @@ const FILE_HASH = 'styled-components-file-hash'
 const COMPONENT_POSITION = 'styled-components-component-position'
 const separatorRegExp = new RegExp(`\\${path.sep}`, 'g')
 
-const getFileHash = state => {
+export const getFileHash = state => {
   const { file } = state
   // hash calculation is costly due to fs operations, so we'll cache it per file.
   if (file.get(FILE_HASH)) {

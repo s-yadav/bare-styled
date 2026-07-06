@@ -26,6 +26,11 @@ export const useNamespace = state => {
 
 export const usePureAnnotation = state => getOption(state, 'pure', false)
 
+export const useCompileStatic = state => getOption(state, 'compileStatic', false)
+
+export const useRuntimeImportPath = state =>
+  getOption(state, 'runtimeImportPath', 'just-styled/runtime')
+
 export const useCssProp = state => getOption(state, 'cssProp', true)
 
 export const useCssPropImportPath = state =>
