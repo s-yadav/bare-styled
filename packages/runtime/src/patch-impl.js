@@ -111,6 +111,13 @@ function consumeInlineStyles(props) {
 // null so the caller can hand the original arguments straight through.
 function resolve(type, props) {
   if (isDescriptor(type)) {
+    // Lazy descriptors resolve their CSS on first render (cached). If the
+    // flatten couldn't produce a static rule, the descriptor bails to the real
+    // styled-components component for full fidelity.
+    if (typeof type.ensure === 'function') {
+      type.ensure()
+      if (type.bailed) return { type: type.getStyledComponent(), props }
+    }
     // `as` and `theme` need styled-components' full machinery, so those
     // renders delegate to the memoized fallback component.
     if (props && ('as' in props || 'theme' in props)) {

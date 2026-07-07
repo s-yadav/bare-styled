@@ -6,6 +6,21 @@
 const React = require('react')
 const sheet = require('./sheet')
 const patchImpl = require('./patch-impl')
+const { flatten, buildRule } = require('./flatten')
+
+// styled-components (optional peer) is used to build the real component for the
+// fallback path. Required lazily so a purely-compiled app need not load it eagerly.
+let _scStyled
+function requireStyled() {
+  if (_scStyled === undefined) {
+    try {
+      _scStyled = require('styled-components').default
+    } catch (e) {
+      _scStyled = null
+    }
+  }
+  return _scStyled
+}
 
 // Shared symbol so the createElement patch can recognize descriptors even
 // when app code and the runtime resolve to different module instances.
@@ -111,9 +126,91 @@ function createStyledElement(desc) {
   return element
 }
 
+// Lazy, three-phase descriptor. The plugin emits
+//   createStyled(component, { componentId, displayName })`…live template…`
+// keeping interpolations live. The CSS is resolved once on first render (via
+// `flatten`, which reuses styled-components' css()) and cached forever. The
+// `componentId` is the stable class — known at creation, so `${Comp}` selector
+// interpolation and hydration work whether the component later compiles or
+// bails, exactly like styled-components' static component class.
+function createStyled(component, config) {
+  const componentId = config.componentId
+  const displayName = config.displayName
+  return function (strings) {
+    const interps = Array.prototype.slice.call(arguments, 1)
+    let styledComponent
+    let ensured = false
+    let vars = []
+
+    const element = React.forwardRef(function JustStyled(props, ref) {
+      return React.createElement(
+        element.getStyledComponent(),
+        ref == null ? props : Object.assign({}, props, { ref })
+      )
+    })
+
+    // Self-reference discriminator (hoisting-proof) + styled-components contract,
+    // all keyed on the stable componentId (see docs/compile-time-design.md).
+    element[IS_STYLED] = element
+    element.component = component
+    element.componentId = componentId
+    element.className = componentId
+    element.styledComponentId = componentId
+    element.target = component
+    element.attrs = []
+    element.foldedComponentIds = ''
+    element.componentStyle = { rules: [], isStatic: true, generateAndInjectStyles: function () { return '' } }
+    if (displayName) element.displayName = displayName
+    element.toString = function () {
+      return '.' + componentId
+    }
+    element.bailed = false
+
+    // First-render flatten, cached. Registers the static rule under the
+    // componentId class, or marks the descriptor as bailed.
+    element.ensure = function () {
+      if (ensured) return
+      ensured = true
+      const r = flatten(strings, interps, componentId)
+      if (r.bail) {
+        element.bailed = true
+        return
+      }
+      vars = r.vars
+      sheet.registerRule(componentId, buildRule(componentId, r.css))
+    }
+
+    element.getInlineStyles = function (props) {
+      const styles = {}
+      for (let i = 0; i < vars.length; i++) {
+        const name = vars[i][0]
+        const value = vars[i][1](props)
+        if (value === null || value === undefined || value === false) continue
+        styles[name] = typeof value === 'number' ? value : String(value)
+      }
+      return styles
+    }
+
+    // The real styled-components component, built lazily from the live template.
+    // Used for the fallback (bail / `as` / `theme`) path.
+    element.getStyledComponent = function () {
+      if (styledComponent === undefined) {
+        const scStyled = requireStyled()
+        styledComponent = scStyled(component)
+          .withConfig({ componentId: componentId, displayName: displayName })
+          .apply(null, [strings].concat(interps))
+      }
+      return styledComponent
+    }
+
+    return element
+  }
+}
+
 module.exports = {
   IS_STYLED,
   createStyledElement,
+  createStyled,
   // When a bundler's automatic JSX runtime points its `jsxImportSource` at
   // just-styled, it imports `jsx`/`jsxs`/`Fragment` from `just-styled/jsx-runtime`
   // — but for the key-after-spread case (`<C {...x} key={k}/>`, ubiquitous in

@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>just-styled vs styled-components — dynamic style cost</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 900px; }
+    button { font: inherit; padding: 6px 12px; margin-right: 8px; cursor: pointer; }
+    label { margin-right: 12px; }
+    #grid { display: grid; grid-template-columns: repeat(20, 1fr); gap: 2px; margin: 16px 0; }
+    #grid > div { height: 12px; border-radius: 2px; }
+    table { border-collapse: collapse; margin-top: 12px; }
+    td, th { border: 1px solid #ccc; padding: 4px 10px; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    .note { color: #666; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>Dynamic style cost: CSS variable vs per-variant class</h1>
+  <p class="note">
+    Both scenarios render <b>N</b> nodes and, for <b>F</b> frames, change every node's
+    color, then force a style+layout flush and time it. This isolates the exact
+    difference between the two engines' dynamic model:
+    styled-components mints a <b>new class + <code>insertRule</code></b> per unique value
+    (stylesheet churn → broad style invalidation); the CSS-variable approach keeps
+    <b>one static rule</b> and updates an inline custom property (element-scoped
+    invalidation, no stylesheet mutation). The "stylesheet rules" column shows the churn.
+  </p>
+
+  <div>
+    <label>N nodes <input id="n" type="number" value="2000" style="width:80px"></label>
+    <label>F frames <input id="f" type="number" value="60" style="width:60px"></label>
+    <label>unique colors <input id="u" type="number" value="360" style="width:60px"></label>
+  </div>
+  <p>
+    <button id="run-var">Run: CSS variable (just-styled model)</button>
+    <button id="run-sc">Run: per-variant class (styled-components model)</button>
+    <button id="clear">Reset</button>
+  </p>
+
+  <div id="grid"></div>
+  <table id="results">
+    <tr><th>scenario</th><th>avg ms/frame</th><th>p95 ms/frame</th><th>total ms</th><th>stylesheet rules</th></tr>
+  </table>
+
+  <script>
+  // Vanilla, dependency-free, to measure the CSS mechanism itself (not React).
+  // "per-variant class" faithfully reproduces what styled-components does at the
+  // stylesheet level: a fresh class + insertRule for each not-yet-seen value.
+  const grid = document.getElementById('grid');
+  const results = document.getElementById('results');
+  let nodes = [];
+
+  function build(n) {
+    grid.innerHTML = '';
+    nodes = [];
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('div');
+      grid.appendChild(d);
+      nodes.push(d);
+    }
+  }
+
+  function color(i, u) {
+    const h = Math.floor((i % u) * (360 / u));
+    return 'hsl(' + h + ' 70% 60%)';
+  }
+
+  function forceFlush() { return document.body.offsetHeight; }
+
+  function record(name, times, ruleCount) {
+    times.sort((a, b) => a - b);
+    const sum = times.reduce((a, b) => a + b, 0);
+    const p95 = times[Math.floor(times.length * 0.95)] || times[times.length - 1];
+    const row = results.insertRow();
+    [name, (sum / times.length).toFixed(2), p95.toFixed(2), sum.toFixed(1), ruleCount]
+      .forEach((v, i) => { const c = row.insertCell(); c.textContent = v; if (i === 0) c.style.textAlign = 'left'; });
+  }
+
+  // ---- Scenario A: one static rule + inline CSS variable per node ----
+  function runVar() {
+    const n = +document.getElementById('n').value;
+    const f = +document.getElementById('f').value;
+    const u = +document.getElementById('u').value;
+    build(n);
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync('#grid > div { background: var(--c); }');
+    document.adoptedStyleSheets = [sheet];
+    const times = [];
+    for (let frame = 0; frame < f; frame++) {
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) nodes[i].style.setProperty('--c', color(i + frame, u));
+      forceFlush();
+      times.push(performance.now() - t0);
+    }
+    record('CSS variable', times, sheet.cssRules.length);
+    document.adoptedStyleSheets = [];
+  }
+
+  // ---- Scenario B: new class + insertRule per unique value (SC model) ----
+  function runClass() {
+    const n = +document.getElementById('n').value;
+    const f = +document.getElementById('f').value;
+    const u = +document.getElementById('u').value;
+    build(n);
+    const sheet = new CSSStyleSheet();
+    document.adoptedStyleSheets = [sheet];
+    const classFor = new Map(); // value -> className (mimics SC's dynamic class cache)
+    let next = 0;
+    const times = [];
+    for (let frame = 0; frame < f; frame++) {
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) {
+        const c = color(i + frame, u);
+        let cls = classFor.get(c);
+        if (!cls) {
+          cls = 'v' + (next++);
+          classFor.set(c, cls);
+          sheet.insertRule('.' + cls + '{background:' + c + '}', sheet.cssRules.length);
+        }
+        nodes[i].className = cls;
+      }
+      forceFlush();
+      times.push(performance.now() - t0);
+    }
+    record('per-variant class', times, sheet.cssRules.length);
+    document.adoptedStyleSheets = [];
+    for (const d of nodes) d.className = '';
+  }
+
+  document.getElementById('run-var').onclick = runVar;
+  document.getElementById('run-sc').onclick = runClass;
+  document.getElementById('clear').onclick = () => {
+    while (results.rows.length > 1) results.deleteRow(1);
+    grid.innerHTML = '';
+    document.adoptedStyleSheets = [];
+  };
+  </script>
+
+  <p class="note">
+    How to read it: watch both <b>ms/frame</b> and <b>stylesheet rules</b>. Bump
+    "unique colors" up (e.g. 3600) to simulate high-cardinality dynamic props — the
+    per-variant scenario's rule count and cost climb; the CSS-variable scenario stays
+    flat. For a rigorous number, also record with the DevTools Performance panel and
+    read "Recalculate Style" totals.
+  </p>
+</body>
+</html>
