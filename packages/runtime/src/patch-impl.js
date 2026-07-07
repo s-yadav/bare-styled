@@ -14,7 +14,7 @@ const IS_STYLED = Symbol.for('just-styled')
 let installed = false
 let patchedEntries = null
 
-// Registry backing the sc-inline hack for styled(Component) descriptors.
+// Registry backing the js-inline hack for styled(Component) descriptors.
 // Entries are written when a descriptor wraps a component ref and consumed
 // (delete on read) when the forwarded className reaches a native element in
 // the same render pass. The size cap guards against leaks when a wrapper
@@ -23,7 +23,7 @@ const INLINE_REGISTRY_CAP = 10000
 const inlineRegistry = new Map()
 let nextInlineId = 0
 
-const SC_INLINE_TOKEN = /(?:^|\s)sc-inline-(\d+)(?=\s|$)/g
+const JS_INLINE_TOKEN = /(?:^|\s)js-inline-(\d+)(?=\s|$)/g
 
 function registerInlineStyles(styles) {
   if (inlineRegistry.size >= INLINE_REGISTRY_CAP) {
@@ -85,13 +85,13 @@ function buildDomProps(desc, props) {
   return next
 }
 
-// Strips sc-inline tokens out of a native element's className and merges the
+// Strips js-inline tokens out of a native element's className and merges the
 // matching registry entries into its style. The element's own style wins.
 function consumeInlineStyles(props) {
   const collected = {}
   let hasCollected = false
   const className = props.className
-    .replace(SC_INLINE_TOKEN, (match, id) => {
+    .replace(JS_INLINE_TOKEN, (match, id) => {
       const entry = inlineRegistry.get(Number(id))
       if (entry) {
         inlineRegistry.delete(Number(id))
@@ -125,9 +125,9 @@ function resolve(type, props) {
     }
     if (typeof type.component === 'string') {
       const domProps = buildDomProps(type, props)
-      // A forwarded className can carry sc-inline tokens from an outer
+      // A forwarded className can carry js-inline tokens from an outer
       // styled(Component) descriptor; this native node resolves them.
-      if (domProps.className.indexOf('sc-inline-') !== -1) {
+      if (domProps.className.indexOf('js-inline-') !== -1) {
         return { type: type.component, props: consumeInlineStyles(domProps) }
       }
       return { type: type.component, props: domProps }
@@ -142,7 +142,7 @@ function resolve(type, props) {
     const styles = type.getInlineStyles(props || {})
     let forwarded = type.className
     for (const key in styles) {
-      forwarded += ' sc-inline-' + registerInlineStyles(styles)
+      forwarded += ' js-inline-' + registerInlineStyles(styles)
       break
     }
     const next = Object.assign({}, props)
@@ -154,7 +154,7 @@ function resolve(type, props) {
     typeof type === 'string' &&
     props &&
     typeof props.className === 'string' &&
-    props.className.indexOf('sc-inline-') !== -1
+    props.className.indexOf('js-inline-') !== -1
   ) {
     return { type, props: consumeInlineStyles(props) }
   }
@@ -166,12 +166,12 @@ function resolve(type, props) {
 // Resolution loops because one pass can surface another descriptor: a
 // descriptor's component ref may itself be a descriptor (styled(Base) where
 // Base compiled too), which unwraps one layer per pass until a plain type
-// with no pending sc-inline tokens remains.
+// with no pending js-inline tokens remains.
 function wrapFactory(original) {
   return function (type, props) {
     // Hot path. This wrapper runs for *every* element the app creates, so the
     // common case — a native tag or ordinary component, no descriptor and no
-    // pending sc-inline tokens — must cost almost nothing. Two cheap reads
+    // pending js-inline tokens — must cost almost nothing. Two cheap reads
     // gate the slow path:
     //   - `type[IS_STYLED]`: set on descriptors (and, harmlessly, on real
     //     styled wrappers that hoisted it — those fall through resolve() as a
@@ -250,7 +250,7 @@ function uninstallCreateElementPatch() {
 }
 
 // Test-only helper, following the __resetSheet convention: reports how many
-// sc-inline entries are pending so tests can assert delete-on-read hygiene.
+// js-inline entries are pending so tests can assert delete-on-read hygiene.
 function __getInlineRegistrySize() {
   return inlineRegistry.size
 }

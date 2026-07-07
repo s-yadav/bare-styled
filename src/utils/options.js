@@ -1,37 +1,24 @@
-import pm from 'picomatch';
+import pm from 'picomatch'
 
 function getOption({ opts }, name, defaultValue = true) {
-  return opts[name] === undefined || opts[name] === null
-    ? defaultValue
-    : opts[name]
+  return opts[name] === undefined || opts[name] === null ? defaultValue : opts[name]
 }
 
+// Options the decoupled transform actually reads. (The old compile-time options
+// — minify, transpileTemplateLiterals, compileStatic, cssProp, ssr, fileName,
+// pure — were removed with the machinery that used them.)
 export const useDisplayName = state => getOption(state, 'displayName')
+
 export const useTopLevelImportPathMatchers = state =>
   getOption(state, 'topLevelImportPaths', []).map(pattern => pm(pattern))
-export const useSSR = state => getOption(state, 'ssr', true)
-export const useFileName = state => getOption(state, 'fileName')
-export const useMeaninglessFileNames = state => getOption(state, 'meaninglessFileNames', ['index'])
-export const useMinify = state => getOption(state, 'minify')
-export const useTranspileTemplateLiterals = state =>
-  getOption(state, 'transpileTemplateLiterals')
+
+export const useMeaninglessFileNames = state =>
+  getOption(state, 'meaninglessFileNames', ['index'])
 
 export const useNamespace = state => {
   const namespace = getOption(state, 'namespace', '')
-  if (namespace) {
-    return `${namespace}__`
-  }
-  return ''
+  return namespace ? `${namespace}__` : ''
 }
-
-export const usePureAnnotation = state => getOption(state, 'pure', false)
-
-export const useCompileStatic = state => getOption(state, 'compileStatic', false)
 
 export const useRuntimeImportPath = state =>
   getOption(state, 'runtimeImportPath', 'just-styled/runtime')
-
-export const useCssProp = state => getOption(state, 'cssProp', true)
-
-export const useCssPropImportPath = state =>
-  getOption(state, 'cssPropImportPath', 'styled-components')

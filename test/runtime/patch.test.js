@@ -218,7 +218,7 @@ describe('createElement patch rendering', () => {
     })
   })
 
-  describe('sc-inline forwarding for component refs', () => {
+  describe('js-inline forwarding for component refs', () => {
     const Wrapper = props => React.createElement('div', props)
 
     it('delivers vars to the native node and strips the token', () => {
@@ -232,7 +232,7 @@ describe('createElement patch rendering', () => {
         React.createElement(Styled, { size: 42 })
       )
       expect(html).toContain('class="js-wrap"')
-      expect(html).not.toContain('sc-inline')
+      expect(html).not.toContain('js-inline')
       expect(html).toMatch(/--sc-w-0:\s*42/)
     })
 
@@ -249,22 +249,22 @@ describe('createElement patch rendering', () => {
         React.createElement(Styled, { size: 42, className: 'user' })
       )
       expect(html).toContain('class="js-wrap user"')
-      expect(html).not.toContain('sc-inline')
+      expect(html).not.toContain('js-inline')
       expect(html).toMatch(/--sc-w-0:\s*own/)
       expect(html).not.toMatch(/--sc-w-0:\s*42/)
     })
 
-    it('leaves an unregistered sc-inline token in place when no forwarding is active', () => {
+    it('leaves an unregistered js-inline token in place when no forwarding is active', () => {
       // Hot-path contract: when the inline registry is empty (no descriptor
       // forwarded a token this pass) the patch skips the per-element className
-      // scan entirely. A stray sc-inline token a user authored by hand is left
+      // scan entirely. A stray js-inline token a user authored by hand is left
       // untouched — but it is inert, since no rule ever targets it. Tokens the
       // runtime actually forwards are stripped on the slow path (the registry
       // is non-empty at that point); see the component-ref tests above.
       const html = renderToStaticMarkup(
-        React.createElement('div', { className: 'a sc-inline-999999 b' })
+        React.createElement('div', { className: 'a js-inline-999999 b' })
       )
-      expect(html).toBe('<div class="a sc-inline-999999 b"></div>')
+      expect(html).toBe('<div class="a js-inline-999999 b"></div>')
     })
 
     it('forwards a plain className when the descriptor has no vars', () => {
@@ -325,7 +325,7 @@ describe('createElement patch rendering', () => {
         React.createElement(Fancy, { tint: 'red', size: 42 }, 'hi')
       )
       expect(html).toContain('class="js-base js-fancy"')
-      expect(html).not.toContain('sc-inline')
+      expect(html).not.toContain('js-inline')
       expect(html).toMatch(/--sc-b-0:\s*red/)
       expect(html).toMatch(/--sc-f-0:\s*42/)
     })

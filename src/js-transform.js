@@ -18,7 +18,7 @@ import { addNamed, addSideEffect } from '@babel/helper-module-imports'
 import { isStyled } from './utils/detectors'
 import getName from './utils/getName'
 import prefixLeadingDigit from './utils/prefixDigit'
-import { getFileHash } from './visitors/displayNameAndId'
+import { getFileHash } from './utils/fileHash'
 import { useDisplayName, useRuntimeImportPath, useMeaninglessFileNames, useNamespace } from './utils/options'
 
 const CREATE_IMPORT_NAME = 'just-styled-create-name'

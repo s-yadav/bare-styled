@@ -4,145 +4,187 @@
   <meta charset="utf-8" />
   <title>just-styled vs styled-components — dynamic style cost</title>
   <style>
-    body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 900px; }
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 1000px; }
     button { font: inherit; padding: 6px 12px; margin-right: 8px; cursor: pointer; }
-    label { margin-right: 12px; }
-    #grid { display: grid; grid-template-columns: repeat(20, 1fr); gap: 2px; margin: 16px 0; }
-    #grid > div { height: 12px; border-radius: 2px; }
-    table { border-collapse: collapse; margin-top: 12px; }
+    button[disabled] { opacity: .5; cursor: default; }
+    select, input { font: inherit; }
+    label { margin-right: 14px; }
+    #grid { display: flex; flex-wrap: wrap; gap: 2px; margin: 16px 0; align-content: flex-start; min-height: 40px; }
+    /* Layout defaults at ZERO specificity (:where) so both models' rules win. */
+    :where(#grid > div) { width: 10px; height: 10px; border-radius: 2px; background: #eee; }
+    table { border-collapse: collapse; margin-top: 12px; font-variant-numeric: tabular-nums; }
     td, th { border: 1px solid #ccc; padding: 4px 10px; text-align: right; }
     th:first-child, td:first-child { text-align: left; }
     .note { color: #666; font-size: 13px; }
+    #status { font-weight: 600; min-height: 1.4em; }
+    #error { color: #b00; white-space: pre-wrap; font-family: monospace; }
   </style>
 </head>
 <body>
   <h1>Dynamic style cost: CSS variable vs per-variant class</h1>
   <p class="note">
-    Both scenarios render <b>N</b> nodes and, for <b>F</b> frames, change every node's
-    color, then force a style+layout flush and time it. This isolates the exact
-    difference between the two engines' dynamic model:
-    styled-components mints a <b>new class + <code>insertRule</code></b> per unique value
-    (stylesheet churn → broad style invalidation); the CSS-variable approach keeps
-    <b>one static rule</b> and updates an inline custom property (element-scoped
-    invalidation, no stylesheet mutation). The "stylesheet rules" column shows the churn.
+    Renders <b>N</b> nodes in a flex-wrap container and, for <b>F</b> frames, gives every node
+    a new value of the chosen <b>property</b>, then forces a full <b>style + layout</b> flush and
+    times it. Two models: <b>CSS variable</b> (one static rule, per-node inline custom property —
+    just-styled) vs <b>per-variant class</b> (a fresh class + <code>insertRule</code> per distinct
+    value, cached and reused — styled-components).
+  </p>
+  <p class="note">
+    Two things to sweep: (1) pick a <b>layout</b> property (width/padding) so the flush includes
+    reflow, not just paint; (2) raise <b>distinct values (K)</b>. Low K is per-variant's best case
+    (rules created once, then cheap class swaps); as K approaches N×F every update needs a new rule,
+    so per-variant's rule count and cost climb while the variable model stays flat at one rule.
   </p>
 
   <div>
     <label>N nodes <input id="n" type="number" value="2000" style="width:80px"></label>
     <label>F frames <input id="f" type="number" value="60" style="width:60px"></label>
-    <label>unique colors <input id="u" type="number" value="360" style="width:60px"></label>
+    <label>distinct values (K) <input id="k" type="number" value="64" style="width:90px"></label>
+    <label>property
+      <select id="prop">
+        <option value="background">background (paint)</option>
+        <option value="width">width (layout / reflow)</option>
+        <option value="padding">padding (layout / reflow)</option>
+        <option value="transform">transform (composite)</option>
+      </select>
+    </label>
   </div>
   <p>
-    <button id="run-var">Run: CSS variable (just-styled model)</button>
-    <button id="run-sc">Run: per-variant class (styled-components model)</button>
+    <button id="run-var">Run: CSS variable</button>
+    <button id="run-sc">Run: per-variant class</button>
     <button id="clear">Reset</button>
   </p>
 
+  <div id="status"></div>
+  <div id="error"></div>
   <div id="grid"></div>
   <table id="results">
-    <tr><th>scenario</th><th>avg ms/frame</th><th>p95 ms/frame</th><th>total ms</th><th>stylesheet rules</th></tr>
+    <tr><th>model</th><th>property</th><th>kind</th><th>K</th><th>avg ms/frame</th><th>p95 ms/frame</th><th>total ms</th><th>peak rules</th></tr>
   </table>
 
+  <p class="note">
+    Notes: the flush (<code>offsetHeight</code>) forces style recalc + layout, so layout properties
+    are genuinely re-laid-out each frame. "peak rules" is the stylesheet size the per-variant model
+    reached (the variable model is always 1). For the authoritative split of Recalculate-Style vs
+    Layout, record a run with the DevTools Performance panel.
+  </p>
+
   <script>
-  // Vanilla, dependency-free, to measure the CSS mechanism itself (not React).
-  // "per-variant class" faithfully reproduces what styled-components does at the
-  // stylesheet level: a fresh class + insertRule for each not-yet-seen value.
-  const grid = document.getElementById('grid');
-  const results = document.getElementById('results');
+  const $ = id => document.getElementById(id);
+  const grid = $('grid'), results = $('results'), statusEl = $('status'), errorEl = $('error');
   let nodes = [];
 
+  const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+  const forceFlush = () => document.body.offsetHeight; // style + layout
+  const clamp = (lo, v, hi) => Math.max(lo, Math.min(hi, v));
+
+  // Property definitions: how to render K distinct values, the CSS property, and
+  // whether changing it triggers layout.
+  const PROPS = {
+    background: { css: 'background', kind: 'paint',     value: (j, K) => `hsl(${(j * 360 / K).toFixed(2)} 70% 60%)` },
+    width:      { css: 'width',      kind: 'layout',    value: (j, K) => `${(6 + j * 26 / K).toFixed(2)}px` },
+    padding:    { css: 'padding',    kind: 'layout',    value: (j, K) => `${(j * 6 / K).toFixed(2)}px` },
+    transform:  { css: 'transform',  kind: 'composite', value: (j, K) => `translateX(${(j * 8 / K).toFixed(2)}px)` },
+  };
+
   function build(n) {
-    grid.innerHTML = '';
+    grid.textContent = '';
     nodes = [];
-    for (let i = 0; i < n; i++) {
-      const d = document.createElement('div');
-      grid.appendChild(d);
-      nodes.push(d);
-    }
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < n; i++) { const d = document.createElement('div'); frag.appendChild(d); nodes.push(d); }
+    grid.appendChild(frag);
   }
 
-  function color(i, u) {
-    const h = Math.floor((i % u) * (360 / u));
-    return 'hsl(' + h + ' 70% 60%)';
+  function readParams() {
+    const n = clamp(1, +$('n').value | 0, 200000);
+    const f = clamp(1, +$('f').value | 0, 1000);
+    const K = clamp(1, +$('k').value | 0, n * f);
+    const p = PROPS[$('prop').value];
+    // Precompute the K distinct value strings once.
+    const pool = new Array(K);
+    for (let j = 0; j < K; j++) pool[j] = p.value(j, K);
+    return { n, f, K, p, pool };
   }
 
-  function forceFlush() { return document.body.offsetHeight; }
-
-  function record(name, times, ruleCount) {
+  function record(model, p, K, times, peakRules) {
     times.sort((a, b) => a - b);
     const sum = times.reduce((a, b) => a + b, 0);
-    const p95 = times[Math.floor(times.length * 0.95)] || times[times.length - 1];
+    const p95 = times[Math.floor(times.length * 0.95)] ?? times[times.length - 1];
     const row = results.insertRow();
-    [name, (sum / times.length).toFixed(2), p95.toFixed(2), sum.toFixed(1), ruleCount]
-      .forEach((v, i) => { const c = row.insertCell(); c.textContent = v; if (i === 0) c.style.textAlign = 'left'; });
+    [model, p.css, p.kind, K, (sum / times.length).toFixed(2), p95.toFixed(2), sum.toFixed(1), peakRules]
+      .forEach((v, i) => { const c = row.insertCell(); c.textContent = v; if (i <= 2) c.style.textAlign = 'left'; });
   }
 
-  // ---- Scenario A: one static rule + inline CSS variable per node ----
-  function runVar() {
-    const n = +document.getElementById('n').value;
-    const f = +document.getElementById('f').value;
-    const u = +document.getElementById('u').value;
+  const setBusy = b => ['run-var', 'run-sc', 'clear', 'prop', 'n', 'f', 'k'].forEach(id => { $(id).disabled = b; });
+
+  // idx picks a value; (i + frame*n) % K means low K cycles a small cached set,
+  // while K == n*f gives a unique value per update (per-variant makes a new rule each time).
+  const idxOf = (i, frame, n, K) => (i + frame * n) % K;
+
+  async function runVar() {
+    const { n, f, K, p, pool } = readParams();
     build(n);
     const sheet = new CSSStyleSheet();
-    sheet.replaceSync('#grid > div { background: var(--c); }');
-    document.adoptedStyleSheets = [sheet];
+    sheet.replaceSync(`#grid > div { ${p.css}: var(--v); }`);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
     const times = [];
     for (let frame = 0; frame < f; frame++) {
+      await nextFrame();
       const t0 = performance.now();
-      for (let i = 0; i < n; i++) nodes[i].style.setProperty('--c', color(i + frame, u));
+      for (let i = 0; i < n; i++) nodes[i].style.setProperty('--v', pool[idxOf(i, frame, n, K)]);
       forceFlush();
       times.push(performance.now() - t0);
+      statusEl.textContent = `CSS variable — ${p.css} — frame ${frame + 1}/${f}`;
     }
-    record('CSS variable', times, sheet.cssRules.length);
-    document.adoptedStyleSheets = [];
+    record('CSS variable', p, K, times, sheet.cssRules.length);
+    document.adoptedStyleSheets = document.adoptedStyleSheets.filter(s => s !== sheet);
   }
 
-  // ---- Scenario B: new class + insertRule per unique value (SC model) ----
-  function runClass() {
-    const n = +document.getElementById('n').value;
-    const f = +document.getElementById('f').value;
-    const u = +document.getElementById('u').value;
+  async function runClass() {
+    const { n, f, K, p, pool } = readParams();
     build(n);
     const sheet = new CSSStyleSheet();
-    document.adoptedStyleSheets = [sheet];
-    const classFor = new Map(); // value -> className (mimics SC's dynamic class cache)
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    const classFor = new Map(); // value string -> className (styled-components' dynamic-class cache)
     let next = 0;
     const times = [];
     for (let frame = 0; frame < f; frame++) {
+      await nextFrame();
       const t0 = performance.now();
       for (let i = 0; i < n; i++) {
-        const c = color(i + frame, u);
-        let cls = classFor.get(c);
-        if (!cls) {
-          cls = 'v' + (next++);
-          classFor.set(c, cls);
-          sheet.insertRule('.' + cls + '{background:' + c + '}', sheet.cssRules.length);
-        }
+        const val = pool[idxOf(i, frame, n, K)];
+        let cls = classFor.get(val);
+        if (!cls) { cls = 'v' + (next++); classFor.set(val, cls); sheet.insertRule(`.${cls}{${p.css}:${val}}`, sheet.cssRules.length); }
         nodes[i].className = cls;
       }
       forceFlush();
       times.push(performance.now() - t0);
+      statusEl.textContent = `per-variant class — ${p.css} — frame ${frame + 1}/${f} (${sheet.cssRules.length} rules)`;
     }
-    record('per-variant class', times, sheet.cssRules.length);
-    document.adoptedStyleSheets = [];
+    record('per-variant class', p, K, times, sheet.cssRules.length);
+    document.adoptedStyleSheets = document.adoptedStyleSheets.filter(s => s !== sheet);
     for (const d of nodes) d.className = '';
   }
 
-  document.getElementById('run-var').onclick = runVar;
-  document.getElementById('run-sc').onclick = runClass;
-  document.getElementById('clear').onclick = () => {
+  function guard(run, label) {
+    return async () => {
+      errorEl.textContent = '';
+      setBusy(true);
+      statusEl.textContent = 'Running ' + label + '…';
+      try { await run(); statusEl.textContent = 'Done: ' + label; }
+      catch (e) { statusEl.textContent = ''; errorEl.textContent = 'Error: ' + (e && e.stack || e); }
+      finally { setBusy(false); }
+    };
+  }
+
+  $('run-var').onclick = guard(runVar, 'CSS variable');
+  $('run-sc').onclick = guard(runClass, 'per-variant class');
+  $('clear').onclick = () => {
     while (results.rows.length > 1) results.deleteRow(1);
-    grid.innerHTML = '';
+    grid.textContent = ''; statusEl.textContent = ''; errorEl.textContent = '';
     document.adoptedStyleSheets = [];
   };
+  statusEl.textContent = 'Ready.';
   </script>
-
-  <p class="note">
-    How to read it: watch both <b>ms/frame</b> and <b>stylesheet rules</b>. Bump
-    "unique colors" up (e.g. 3600) to simulate high-cardinality dynamic props — the
-    per-variant scenario's rule count and cost climb; the CSS-variable scenario stays
-    flat. For a rigorous number, also record with the DevTools Performance panel and
-    read "Recalculate Style" totals.
-  </p>
 </body>
 </html>

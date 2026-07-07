@@ -1,0 +1,157 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Concurrent insertion cost — render-phase vs commit-phase</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 900px; }
+    button { font: inherit; padding: 6px 12px; margin-right: 8px; cursor: pointer; }
+    button[disabled] { opacity: .5; cursor: default; }
+    .list { display: grid; grid-template-columns: repeat(60, 1fr); gap: 1px; margin: 16px 0; font-size: 6px; line-height: 6px; }
+    table { border-collapse: collapse; margin-top: 12px; }
+    td, th { border: 1px solid #ccc; padding: 4px 10px; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    .note { color: #666; font-size: 13px; }
+    #status { font-weight: 600; min-height: 1.4em; }
+    #error { color: #b00; white-space: pre-wrap; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>Concurrent insertion cost: rule insertion during render vs at commit</h1>
+  <p class="note">
+    Mounts <b>N</b> nodes inside a <code>startTransition</code> (so React time-slices the
+    render). Two strategies for injecting each node's static rule:
+    <b>during render</b> (what just-styled and styled-components do — the sheet is mutated
+    across the render's yields) vs <b>at commit via a ref callback</b> (the fiber-free
+    alternative — one batch after the render). Compares the transition's wall-clock and
+    main-thread long-task time. For authoritative "Recalculate Style" totals, record each
+    run with the DevTools Performance panel.
+  </p>
+
+  <div>
+    <label>N nodes <input id="n" type="number" value="10000" style="width:90px"></label>
+  </div>
+  <div id="status">Loading React…</div>
+  <div id="error"></div>
+  <div id="root"></div>
+  <table id="results">
+    <tr><th>strategy</th><th>transition ms</th><th>long-task ms</th><th>rules inserted</th></tr>
+  </table>
+
+  <p class="note">
+    Expectation: if render-phase sheet mutation triggers extra style recalcs during the
+    render's yields, "insert during render" shows higher transition/long-task time than
+    "insert at commit". If they're close, render-phase insertion (the simpler path) is fine.
+  </p>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script>
+  (function () {
+    const $ = id => document.getElementById(id);
+    const statusEl = $('status'), errorEl = $('error'), results = $('results');
+
+    if (!window.React || !window.ReactDOM) {
+      errorEl.textContent = 'React UMD failed to load (no network / CDN blocked). Open with internet access.';
+      return;
+    }
+    const { useState, useTransition, useEffect, useRef, createElement: h } = React;
+
+    // Shared constructable sheet + dedup, reset per run.
+    let sheet = null;
+    let inserted = null;
+    function resetSheet() {
+      if (sheet) document.adoptedStyleSheets = document.adoptedStyleSheets.filter(s => s !== sheet);
+      sheet = new CSSStyleSheet();
+      inserted = new Set();
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    }
+    function insertRuleOnce(cls, hue) {
+      if (inserted.has(cls)) return;
+      inserted.add(cls);
+      sheet.insertRule('.' + cls + '{color:hsl(' + hue + ' 70% 50%)}', sheet.cssRules.length);
+    }
+
+    // Insertion happens in the RENDER body — spread across the transition's time slices.
+    function RenderInsert({ i }) {
+      const cls = 'r' + i;
+      insertRuleOnce(cls, i % 360);
+      return h('div', { className: cls }, '.');
+    }
+    // Insertion happens in a ref callback — during the commit's mutation phase (one batch).
+    function CommitInsert({ i }) {
+      const cls = 'c' + i;
+      return h('div', { className: cls, ref: node => { if (node) insertRuleOnce(cls, i % 360); } }, '.');
+    }
+
+    function List({ n, variant }) {
+      const C = variant === 'render' ? RenderInsert : CommitInsert;
+      const items = new Array(n);
+      for (let i = 0; i < n; i++) items[i] = h(C, { key: i, i });
+      return h('div', { className: 'list' }, items);
+    }
+
+    // Long-task accounting during a run.
+    let longTaskTotal = 0;
+    try {
+      new PerformanceObserver(list => {
+        for (const e of list.getEntries()) longTaskTotal += e.duration;
+      }).observe({ entryTypes: ['longtask'] });
+    } catch (e) { /* longtask API unavailable */ }
+
+    function report(strategy, ms, rules) {
+      const row = results.insertRow();
+      [strategy, ms.toFixed(1), longTaskTotal.toFixed(1), rules].forEach((v, i) => {
+        const c = row.insertCell(); c.textContent = v; if (i === 0) c.style.textAlign = 'left';
+      });
+    }
+
+    function App() {
+      const [n] = useState(() => +$('n').value || 10000);
+      const [variant, setVariant] = useState(null);
+      const [isPending, startTransition] = useTransition();
+      const startedRef = useRef(null);
+      const startTimeRef = useRef(0);
+
+      // When a transition we started finishes (isPending falls), record it.
+      useEffect(() => {
+        if (startedRef.current && !isPending) {
+          const ms = performance.now() - startTimeRef.current;
+          report(startedRef.current, ms, sheet.cssRules.length);
+          statusEl.textContent = 'Done: insert ' + startedRef.current + ' — ' + ms.toFixed(0) + ' ms';
+          startedRef.current = null;
+        }
+      }, [isPending]);
+
+      const run = v => () => {
+        errorEl.textContent = '';
+        setVariant(null); // unmount previous list first
+        requestAnimationFrame(() => {
+          resetSheet();
+          longTaskTotal = 0;
+          statusEl.textContent = 'Rendering ' + n + ' nodes (insert ' + v + ')…';
+          startedRef.current = v;
+          startTimeRef.current = performance.now();
+          startTransition(() => setVariant(v));
+        });
+      };
+
+      return h('div', null,
+        h('div', null,
+          h('button', { onClick: run('render'), disabled: isPending }, 'Run: insert during render'),
+          h('button', { onClick: run('commit'), disabled: isPending }, 'Run: insert at commit (ref)')
+        ),
+        variant ? h(List, { n, variant }) : null
+      );
+    }
+
+    try {
+      ReactDOM.createRoot($('root')).render(h(App));
+      statusEl.textContent = 'Ready.';
+    } catch (e) {
+      errorEl.textContent = 'Error: ' + (e && e.stack || e);
+    }
+  })();
+  </script>
+</body>
+</html>
