@@ -15,6 +15,8 @@
 const { compile, serialize, stringify, middleware, prefixer } = require('stylis')
 const sheet = require('./sheet')
 
+const EMPTY = {}
+
 let scCss = null
 try {
   scCss = require('styled-components').css
@@ -118,15 +120,26 @@ function isStatic(parts) {
   return true
 }
 
-// Register a static component's rule under its componentId (deduped by the
-// sheet). Compiled with stylis at runtime unless the plugin pre-compiled it
-// (precompiled css passed straight through).
-function registerStatic(componentId, cssBody, precompiled) {
+// Register a static component's rule under its componentId, once per sheet
+// lifetime. The dedup guard is a module-level Set (cleared with the sheet in
+// __reset), NOT a per-descriptor flag: descriptors are module-level and outlive
+// any __resetSheet, so a per-descriptor "already done" boolean would stay true
+// after the sheet was cleared and permanently suppress re-registration, leaving
+// the static/compile-time CSS missing from the DOM. Keying the guard to the
+// sheet's own lifetime keeps the two in sync. The resolved css body is computed
+// (or the plugin's precompiled rule used) only on the first miss.
+const staticRegistered = new Set()
+function registerStatic(componentId, parts, precompiled) {
+  if (staticRegistered.has(componentId)) return
+  staticRegistered.add(componentId)
   sheet.registerRule(
     componentId,
     precompiled != null
       ? precompiled
-      : serialize(compile('.' + componentId + '{' + cssBody + '}'), middleware([prefixer, stringify]))
+      : serialize(
+          compile('.' + componentId + '{' + resolveParts(parts, EMPTY) + '}'),
+          middleware([prefixer, stringify])
+        )
   )
 }
 
@@ -155,6 +168,7 @@ function classFor(cssBody) {
 
 function __reset() {
   classCache.clear()
+  staticRegistered.clear()
 }
 
 module.exports = { cacheParts, resolveParts, classFor, isStatic, registerStatic, hash, __reset }

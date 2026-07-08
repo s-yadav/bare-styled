@@ -35,6 +35,34 @@ describe('descriptor resolution (hash-class, no wrapper fiber)', () => {
     expect(getCss()).toMatch(/\.sc-box\{color:red;\}/)
   })
 
+  it('re-registers a static rule after __resetSheet (descriptor outlives the sheet)', () => {
+    // Regression: a module-level descriptor is created once and reused across
+    // many sheet resets (e.g. repeated harness runs). A per-descriptor "done"
+    // flag would survive the reset and suppress re-registration, leaving the
+    // static css missing. The guard must track the sheet's lifetime instead.
+    const Box = createStyled('div', { componentId: 'sc-reuse' })`color: green;`
+    render(React.createElement(Box, null, '1'))
+    expect(getCss()).toMatch(/\.sc-reuse\{color:green;\}/)
+
+    __resetSheet()
+    expect(getCss()).not.toContain('sc-reuse') // cleared
+
+    render(React.createElement(Box, null, '2')) // same descriptor, fresh sheet
+    expect(getCss()).toMatch(/\.sc-reuse\{color:green;\}/) // back in the DOM
+  })
+
+  it('re-registers a build-time precompiled (Opt 2) rule after __resetSheet', () => {
+    const Box = createStyled('div', {
+      componentId: 'sc-pre',
+      css: '.sc-pre{display:flex;}', // plugin-precompiled, zero-interpolation
+    })``
+    render(React.createElement(Box, null, 'a'))
+    expect(getCss()).toContain('.sc-pre{display:flex;}')
+    __resetSheet()
+    render(React.createElement(Box, null, 'b'))
+    expect(getCss()).toContain('.sc-pre{display:flex;}')
+  })
+
   it('distinct resolved styles get distinct classes; identical ones share', () => {
     const Btn = createStyled('button', { componentId: 'sc-b' })`color: ${p => p.color};`
     render(React.createElement('div', null,

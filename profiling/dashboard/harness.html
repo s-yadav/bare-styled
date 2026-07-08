@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Dashboard render cost — styled-components vs just-styled</title>
+  <style>
+    body { margin: 24px; }
+    table td, table th { border: 1px solid #ccc; padding: 4px 10px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- Build first:  node profiling/dashboard/build.mjs  -->
+  <script src="./dist/harness.js"></script>
+</body>
+</html>

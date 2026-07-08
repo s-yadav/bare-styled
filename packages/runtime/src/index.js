@@ -42,7 +42,6 @@ function createStyled(component, config) {
     element.parts = parts
     element.css = precompiled
     element.isStatic = isStatic
-    element._staticDone = false
     element.target = component
     if (displayName) element.displayName = displayName
     element.toString = function () {

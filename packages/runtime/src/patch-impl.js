@@ -61,16 +61,11 @@ function resolveDescriptor(type, props) {
   const p = props || EMPTY
   let styleClass = ''
   if (type.isStatic) {
-    // Styles never change: resolve+inject once under the componentId, which
-    // then doubles as the style class. No per-render resolve or hash.
-    if (!type._staticDone) {
-      engine.registerStatic(
-        type.componentId,
-        type.css != null ? null : engine.resolveParts(type.parts, EMPTY),
-        type.css // build-time precompiled rule (Opt 2), if the plugin supplied one
-      )
-      type._staticDone = true
-    }
+    // Styles never change: inject once under the componentId, which then doubles
+    // as the style class. No per-render resolve or hash. registerStatic dedups
+    // internally against the sheet's lifetime (Set keyed by componentId), so it
+    // correctly re-registers after a __resetSheet and costs one Set lookup here.
+    engine.registerStatic(type.componentId, type.parts, type.css)
   } else {
     // Prop-dependent: componentId is a marker (for `${Comp}` selectors); the
     // hash class carries the resolved styles. classFor caches globally by the
