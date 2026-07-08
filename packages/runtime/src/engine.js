@@ -120,27 +120,92 @@ function isStatic(parts) {
   return true
 }
 
+// Serialize a static component's rule (resolve parts -> stylis compile -> prefix).
+function serializeStatic(componentId, parts) {
+  return serialize(
+    compile('.' + componentId + '{' + resolveParts(parts, EMPTY) + '}'),
+    middleware([prefixer, stringify])
+  )
+}
+
+// ---- idle precompilation of static rules ------------------------------------
+// A static component (module values / fragments, no prop-dependent functions) is
+// cheap to render but still needs a stylis compile the first time it renders. We
+// move that compile OFF the render critical path: at definition (module-load)
+// time each static descriptor is queued, and a single requestIdleCallback drains
+// the queue during browser idle, caching each serialized rule string. First
+// render then just inserts the cached string (a DOM write, no compile).
+//
+// DOM insertion stays lazy — the idle pass only precomputes strings, it does not
+// touch the sheet — so we never inject CSS for a component that is defined but
+// never rendered, and sheet order still follows first render (no idle-vs-render
+// ordering race). If a component renders before idle reaches it, registerStatic
+// compiles inline; the shared idle callback + the staticRegistered guard mean the
+// two paths never double-compile, so no explicit per-item cancellation is needed.
+// Degrades to today's inline path where requestIdleCallback is unavailable
+// (SSR / jsdom / older Safari).
+const precomputed = new Map() // componentId -> serialized css (awaiting first render)
+const pendingStatic = [] // { componentId, parts } awaiting idle precompile
+let idleArmed = false
+
+const ric =
+  typeof requestIdleCallback === 'function'
+    ? requestIdleCallback
+    : typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function'
+    ? window.requestIdleCallback.bind(window)
+    : null
+
+function drainIdle(deadline) {
+  idleArmed = false
+  while (
+    pendingStatic.length &&
+    (!deadline || deadline.didTimeout || deadline.timeRemaining() > 1)
+  ) {
+    const item = pendingStatic.pop()
+    // Skip anything a render already registered (or that we already precomputed).
+    if (!staticRegistered.has(item.componentId) && !precomputed.has(item.componentId)) {
+      precomputed.set(item.componentId, serializeStatic(item.componentId, item.parts))
+    }
+  }
+  if (pendingStatic.length) {
+    idleArmed = true
+    ric(drainIdle)
+  }
+}
+
+// Queue a static, non-precompiled descriptor for idle precompilation. No-op
+// without an idle API (the rule is then compiled inline on first render).
+function queueStatic(componentId, parts) {
+  if (!ric) return
+  pendingStatic.push({ componentId, parts })
+  if (!idleArmed) {
+    idleArmed = true
+    ric(drainIdle)
+  }
+}
+
 // Register a static component's rule under its componentId, once per sheet
 // lifetime. The dedup guard is a module-level Set (cleared with the sheet in
 // __reset), NOT a per-descriptor flag: descriptors are module-level and outlive
 // any __resetSheet, so a per-descriptor "already done" boolean would stay true
 // after the sheet was cleared and permanently suppress re-registration, leaving
 // the static/compile-time CSS missing from the DOM. Keying the guard to the
-// sheet's own lifetime keeps the two in sync. The resolved css body is computed
-// (or the plugin's precompiled rule used) only on the first miss.
+// sheet's own lifetime keeps the two in sync. The rule string is taken from the
+// plugin's precompiled css (Opt 2), the idle precompute cache, or compiled inline
+// here — whichever is available first — and only ever computed once.
 const staticRegistered = new Set()
 function registerStatic(componentId, parts, precompiled) {
   if (staticRegistered.has(componentId)) return
   staticRegistered.add(componentId)
-  sheet.registerRule(
-    componentId,
-    precompiled != null
-      ? precompiled
-      : serialize(
-          compile('.' + componentId + '{' + resolveParts(parts, EMPTY) + '}'),
-          middleware([prefixer, stringify])
-        )
-  )
+  let css
+  if (precompiled != null) {
+    css = precompiled
+  } else {
+    css = precomputed.get(componentId)
+    if (css === undefined) css = serializeStatic(componentId, parts)
+    else precomputed.delete(componentId) // now in the sheet; free the interim copy
+  }
+  sheet.registerRule(componentId, css)
 }
 
 // Generated class for a resolved CSS body, keyed by the resolved string in a
@@ -171,4 +236,4 @@ function __reset() {
   staticRegistered.clear()
 }
 
-module.exports = { cacheParts, resolveParts, classFor, isStatic, registerStatic, hash, __reset }
+module.exports = { cacheParts, resolveParts, classFor, isStatic, registerStatic, queueStatic, hash, __reset }

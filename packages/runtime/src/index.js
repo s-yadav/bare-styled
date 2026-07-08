@@ -28,6 +28,11 @@ function createStyled(component, config) {
     const parts = precompiled != null ? null : engine.cacheParts(strings, interps)
     const isStatic = precompiled != null || engine.isStatic(parts)
 
+    // A static component that isn't already build-time precompiled (Opt 2) has a
+    // stylis compile to do on first render — queue it for idle precompilation so
+    // that work happens off the render critical path (see engine.queueStatic).
+    if (isStatic && precompiled == null) engine.queueStatic(componentId, parts)
+
     // forwardRef so the descriptor is a valid element type and still renders
     // correctly if neither the patch nor the jsx runtime is installed.
     const element = React.forwardRef(function JustStyled(props, ref) {
