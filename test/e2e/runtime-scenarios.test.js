@@ -1,12 +1,10 @@
 /**
  * @jest-environment jsdom
  *
- * Runtime behaviors on the new createStyled path (compiled with the decoupled
- * plugin, JSX routed through just-styled's automatic runtime — the real
- * prophecy setup). Preserves the scenarios previously covered via the removed
- * compileStatic emit: styled(Component) var forwarding (js-inline), styled
- * component used as a nested selector, and key-after-spread (createElement
- * fallback from the import-source root).
+ * Runtime scenarios on the hash-class model, compiled with the plugin and JSX
+ * routed through just-styled's automatic runtime (the real prophecy setup):
+ * styled(Component) class forwarding, styled component used as a nested selector,
+ * and key-after-spread (createElement fallback from the import-source root).
  */
 import { transform } from '@babel/core'
 import path from 'path'
@@ -22,9 +20,7 @@ const evaluate = source => {
     filename: path.join(__dirname, 'app.jsx'),
     babelrc: false,
     configFile: false,
-    presets: [
-      [require.resolve('@babel/preset-react'), { runtime: 'automatic', importSource: 'just-styled', development: false }],
-    ],
+    presets: [[require.resolve('@babel/preset-react'), { runtime: 'automatic', importSource: 'just-styled', development: false }]],
     plugins: [plugin, require.resolve('@babel/plugin-transform-modules-commonjs')],
   })
   const requireShim = request => {
@@ -42,13 +38,9 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.appendChild(container)
 })
-afterEach(() => {
-  runtime.__resetSheet()
-  document.head.innerHTML = ''
-  document.body.innerHTML = ''
-})
+afterEach(() => { runtime.__resetSheet(); document.head.innerHTML = ''; document.body.innerHTML = '' })
 
-test('styled(Component) forwards a css-variable to the wrapped native node (js-inline)', () => {
+test('styled(Component) forwards its class to the wrapped native node', () => {
   const { App } = evaluate(`
     import styled from 'styled-components'
     function Inner({ className }) { return <div id="leaf" className={className} /> }
@@ -56,11 +48,9 @@ test('styled(Component) forwards a css-variable to the wrapped native node (js-i
     export const App = ({ color }) => <Wrapped color={color} />
   `)
   act(() => createRoot(container).render(React.createElement(App, { color: 'tomato' })))
-
   const leaf = container.querySelector('#leaf')
-  expect(leaf.className).toMatch(/\bsc-[a-z0-9]+-\d\b/)
-  expect(leaf.className).not.toContain('js-inline')
-  expect(leaf.getAttribute('style')).toMatch(/--sc-[a-z0-9]+-\d-0:\s*tomato/)
+  expect(leaf.className).toMatch(/^sc-[a-z0-9]+-\d js-[a-z0-9]+$/)
+  expect(runtime.getCss()).toMatch(/background:\s*tomato/)
 })
 
 test('a styled component resolves as a nested selector in another component', () => {
@@ -71,12 +61,11 @@ test('a styled component resolves as a nested selector in another component', ()
     export const App = () => <Parent><Child>hi</Child></Parent>
   `)
   act(() => createRoot(container).render(React.createElement(App)))
-
   const child = container.querySelector('span')
-  const childClass = child.className.match(/sc-[a-z0-9]+-\d/)[0]
-  // Parent's rule targets the child by that exact class.
-  expect(runtime.getCss()).toContain('.' + childClass)
-  expect(runtime.getCss()).toMatch(new RegExp('\\.' + childClass + '\\{color:red;\\}'))
+  // Child's stable componentId is the selector target Parent's rule references.
+  const childId = child.className.split(' ')[0]
+  expect(childId).toMatch(/^sc-[a-z0-9]+-\d$/)
+  expect(runtime.getCss()).toContain('.' + childId + '{color:red;}')
 })
 
 test('key-after-spread in a map resolves via the root createElement fallback', () => {
@@ -89,18 +78,12 @@ test('key-after-spread in a map resolves via the root createElement fallback', (
   `)
   act(() =>
     createRoot(container).render(
-      React.createElement(List, {
-        items: [
-          { id: 'a', color: 'red', label: 'A' },
-          { id: 'b', color: 'blue', label: 'B' },
-        ],
-      })
+      React.createElement(List, { items: [{ id: 'a', color: 'red', label: 'A' }, { id: 'b', color: 'blue', label: 'B' }] })
     )
   )
-
   const items = container.querySelectorAll('li')
   expect(items).toHaveLength(2)
-  items.forEach(li => expect(li.className).toMatch(/\bsc-[a-z0-9]+-\d\b/))
-  expect(items[0].getAttribute('style')).toMatch(/--sc-[a-z0-9]+-\d-0:\s*red/)
-  expect(items[1].getAttribute('style')).toMatch(/--sc-[a-z0-9]+-\d-0:\s*blue/)
+  items.forEach(li => expect(li.className).toMatch(/^sc-[a-z0-9]+-\d js-[a-z0-9]+$/))
+  // distinct colors -> distinct hash classes
+  expect(items[0].className.split(' ')[1]).not.toBe(items[1].className.split(' ')[1])
 })
