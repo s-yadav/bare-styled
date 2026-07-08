@@ -15,6 +15,7 @@
 import syntax from '@babel/plugin-syntax-jsx'
 import path from 'path'
 import { addNamed, addSideEffect } from '@babel/helper-module-imports'
+import { compile, serialize, stringify, middleware, prefixer } from 'stylis'
 import { isStyled } from './utils/detectors'
 import getName from './utils/getName'
 import prefixLeadingDigit from './utils/prefixDigit'
@@ -99,6 +100,21 @@ export default function ({ types: t }) {
               )
             )
           }
+        }
+
+        // Opt 2: a template with no interpolations is fully static and can be
+        // compiled with stylis at BUILD time. Emit the finished rule as `css`
+        // (registered under the componentId at runtime — no runtime css()/stylis)
+        // and drop the now-redundant template body.
+        const quasi = path.node.quasi
+        if (quasi.expressions.length === 0) {
+          const raw = (quasi.quasis[0] && quasi.quasis[0].value.cooked) || ''
+          const compiled = serialize(
+            compile('.' + componentId + '{' + raw + '}'),
+            middleware([prefixer, stringify])
+          )
+          configProps.push(t.objectProperty(t.identifier('css'), t.stringLiteral(compiled)))
+          path.node.quasi = t.templateLiteral([t.templateElement({ raw: '', cooked: '' })], [])
         }
 
         const runtimeImportPath = useRuntimeImportPath(state)

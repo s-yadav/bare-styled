@@ -36,11 +36,30 @@ Full option reference lives on the [styled-components documentation site](https:
 - `topLevelImportPaths` (`string[]`): additional module specifiers whose `styled` export should be recognized alongside `styled-components`. Useful for libraries that re-export the styled-components API.
 - `cssPropImportPath` (`string`, default `'styled-components'`): which package the css-prop transform should auto-import `styled` from when the file doesn't already have a styled import. Set to `'styled-components/native'` for React Native targets.
 
-## Compile-time static extraction (experimental)
+## just-styled
 
-With `compileStatic: true`, eligible `styled.tag` and `styled(Component)` components are compiled ahead of time: static CSS becomes a precompiled rule under a stable class name, prop-based interpolations become CSS custom properties set as inline styles, and the styled-components wrapper disappears from the render path. For wrapped components, the runtime rides the forwarded `className` down to the last native element and resolves the CSS variables there. Components the plugin can't prove safe (theme access, `.attrs`, interpolations outside value position) keep the standard styled-components output, so enabling the option never changes behavior, only where the work happens.
+just-styled keeps styled-components' styling model but renders each `styled`
+component as a **plain host element** rather than a wrapper component — removing
+a React fiber (and its hooks) per styled element while matching styled-components
+on CSS cost.
 
-Compiled components need the `just-styled` runtime package (see `packages/runtime`), which the plugin wires up automatically via `runtimeImportPath` (default `'just-styled/runtime'`). Props like `as` and `theme` transparently fall back to a real styled component at render time. Design notes live in `docs/compile-time-design.md`.
+The plugin rewrites `styled.tag\`…\`` / `styled('tag')\`…\`` / `styled(Ident)\`…\``
+into `createStyled(component, { componentId, displayName })\`…\`` (interpolations
+stay live) and imports the `just-styled` runtime. Point your bundler's automatic
+JSX runtime at just-styled (`jsxImportSource: 'just-styled'`) so descriptors
+resolve to host elements. At render, prop interpolations resolve against props,
+hash to a class, and inject a rule (deduped); components with no prop-dependent
+styles resolve once to a `componentId` class, and zero-interpolation templates
+are compiled at build time. There is **no bail-out** — every styled render is a
+host element.
+
+`.attrs` / `.withConfig` chains and the `css` / `keyframes` / `createGlobalStyle`
+helpers are left untouched and run through real styled-components.
+
+**Known limitation:** `ThemeProvider` / context theme is not supported (a host
+element can't read React context; `props.theme` is undefined). Use a module-scope
+theme constant. Design notes and other limitations: `docs/compile-time-design.md`;
+runtime details: `packages/runtime/README.md`.
 
 ## Changelog
 

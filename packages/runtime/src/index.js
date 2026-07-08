@@ -20,9 +20,13 @@ const IS_STYLED = Symbol.for('just-styled')
 function createStyled(component, config) {
   const componentId = config.componentId
   const displayName = config.displayName
+  const precompiled = config.css // Opt 2: build-time compiled rule for a zero-interpolation template
   return function (strings) {
     const interps = Array.prototype.slice.call(arguments, 1)
-    const parts = engine.cacheParts(strings, interps)
+    // A precompiled rule is static by definition; otherwise flatten the static
+    // half once and decide static-vs-dynamic from whether any function survives.
+    const parts = precompiled != null ? null : engine.cacheParts(strings, interps)
+    const isStatic = precompiled != null || engine.isStatic(parts)
 
     // forwardRef so the descriptor is a valid element type and still renders
     // correctly if neither the patch nor the jsx runtime is installed.
@@ -36,6 +40,9 @@ function createStyled(component, config) {
     element.componentId = componentId
     element.styledComponentId = componentId // component-selector target
     element.parts = parts
+    element.css = precompiled
+    element.isStatic = isStatic
+    element._staticDone = false
     element.target = component
     if (displayName) element.displayName = displayName
     element.toString = function () {

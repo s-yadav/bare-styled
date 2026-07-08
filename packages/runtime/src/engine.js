@@ -76,7 +76,18 @@ function resolveValue(v, props) {
   const t = typeof v
   if (t === 'string') return v
   if (t === 'number') return String(v)
-  if (t === 'function') return resolveValue(v(props), props)
+  if (t === 'function') {
+    // KNOWN LIMITATION: theme via <ThemeProvider> is not supported — a plain
+    // host element can't read React context, so `props.theme` is undefined and
+    // `p => p.theme.x` throws. We swallow the throw and drop that interpolation
+    // (the rest of the rule still applies) rather than crash the render. Use a
+    // module-scope theme constant instead. See README / docs.
+    try {
+      return resolveValue(v(props), props)
+    } catch (e) {
+      return ''
+    }
+  }
   if (Array.isArray(v)) {
     let out = ''
     for (let i = 0; i < v.length; i++) out += resolveValue(v[i], props)
@@ -95,6 +106,28 @@ function resolveParts(parts, props) {
   let out = ''
   for (let i = 0; i < parts.length; i++) out += resolveValue(parts[i], props)
   return out
+}
+
+// A component is static when no interpolation is prop-dependent (css() already
+// baked module values, fragments and selectors into strings, so any surviving
+// function is the only thing that can vary between renders). Static components
+// resolve once to a single rule under their componentId — no per-render resolve
+// or hash.
+function isStatic(parts) {
+  for (let i = 0; i < parts.length; i++) if (typeof parts[i] === 'function') return false
+  return true
+}
+
+// Register a static component's rule under its componentId (deduped by the
+// sheet). Compiled with stylis at runtime unless the plugin pre-compiled it
+// (precompiled css passed straight through).
+function registerStatic(componentId, cssBody, precompiled) {
+  sheet.registerRule(
+    componentId,
+    precompiled != null
+      ? precompiled
+      : serialize(compile('.' + componentId + '{' + cssBody + '}'), middleware([prefixer, stringify]))
+  )
 }
 
 // Generated class for a resolved CSS body. Cached by the resolved string
@@ -121,4 +154,4 @@ function __reset() {
   classCache.clear()
 }
 
-module.exports = { cacheParts, resolveParts, classFor, hash, __reset }
+module.exports = { cacheParts, resolveParts, classFor, isStatic, registerStatic, hash, __reset }

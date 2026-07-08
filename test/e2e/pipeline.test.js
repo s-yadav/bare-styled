@@ -55,7 +55,8 @@ test('static + shared fragment + module value resolve into one hash-class rule',
   `)
   act(() => createRoot(container).render(React.createElement(App)))
   const el = container.querySelector('div')
-  expect(el.className).toMatch(/^sc-[a-z0-9]+-0 js-[a-z0-9]+$/)
+  // module value + fragment resolve to a constant css -> STATIC -> componentId only.
+  expect(el.className).toMatch(/^sc-[a-z0-9]+-0$/)
   expect(runtime.getCss()).toMatch(/width:\s*400px/)
   expect(runtime.getCss()).toMatch(/background-color:\s*#eee/)
 })

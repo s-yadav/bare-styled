@@ -33,6 +33,27 @@ describe('js-transform (decoupled createStyled emit)', () => {
     expect(out).toMatch(/just-styled\/runtime\/patch/)
   })
 
+  it('pre-compiles a zero-interpolation template at build time (Opt 2)', () => {
+    const out = run(`
+      import styled from 'styled-components'
+      const A = styled.div\`color: red; padding: 8px;\`
+    `)
+    // finished stylis output emitted as css, keyed to the componentId; the
+    // template body is dropped (no runtime stylis for pure-static rules).
+    expect(out).toMatch(/css:\s*"\.sc-[a-z0-9]+-0\{color:red;padding:8px;\}"/)
+    expect(out).not.toMatch(/color: red; padding: 8px;/) // raw template gone
+  })
+
+  it('does NOT pre-compile when the template has interpolations', () => {
+    const out = run(`
+      import styled from 'styled-components'
+      const t = { c: 'red' }
+      const A = styled.div\`color: \${t.c};\`
+    `)
+    expect(out).not.toMatch(/\bcss:/) // left to runtime resolution
+    expect(out).toContain('t.c')
+  })
+
   it('rewrites styled("tag") and styled(Component)', () => {
     const out = run(`
       import styled from 'styled-components'

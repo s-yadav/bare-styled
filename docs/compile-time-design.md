@@ -1,93 +1,106 @@
-# just-styled: compile-time styled-components
+# just-styled: design
 
-Goal: move styled-components work from runtime to compile time. The babel plugin (fork of babel-plugin-styled-components) precompiles CSS into static class rules + CSS variables, and emits a lightweight descriptor object instead of relying on the styled-components runtime wrapper. A runtime package (`packages/runtime`, published as `just-styled`) handles rendering descriptors. Drop-in: app code using `styled` does not change.
+**Goal:** styled-components' exact styling model — resolve a template against
+props, hash the result, inject a rule, use the class — but rendered so the
+styled component collapses to a plain host element instead of a wrapper
+component. The win is **fewer React fibers/hooks**, at parity on CSS cost.
 
-## Plugin option
+`styled` usage does not change; it's a drop-in for the supported surface.
 
-- `compileStatic` (boolean, default `false`): enables the new stage.
-- `runtimeImportPath` (string, default `'just-styled/runtime'`): module the emitted helper is imported from.
+## Two pieces
 
-All existing options/behavior of babel-plugin-styled-components are preserved. When `compileStatic` is off, output is byte-identical to upstream.
-
-## Pipeline placement
-
-In `processTaggedTemplate` (src/visitors/process.js) the new stage `compileStatic` runs after `minify` and `displayNameAndId` (so it sees minified CSS and can read displayName/componentId from the `.withConfig({...})` object), and before `templateLiterals`. When it replaces the node, the original tagged template survives inside the `fallback` arrow and is still processed by the remaining visitors on requeue (withConfig merge is idempotent; templateLiterals transpiles the inner template as usual).
-
-## Eligibility (MVP)
-
-A `styled.tag`...`` component compiles to a descriptor iff:
-
-- Tag form is `styled.htmltag`, `styled('htmltag')` (native element, known string), or `styled(Component)` where `Component` is a plain identifier in scope. Member expressions (`styled(obj.Component)`), call results (`styled(hoc())`), and every other tag shape → bail out.
-- No `.attrs(...)` in the chain. `.withConfig` is fine.
-- Every interpolation is classified as static or var-compatible (below).
-- Helpers (`css`, `keyframes`, `createGlobalStyle`) are never compiled — untouched.
-
-For `styled(Component)` the descriptor's `component` is the identifier itself rather than a tag string, and the runtime resolves css variables via the js-inline mechanism: the patch registers `getInlineStyles(props)` under a fresh id, forwards `className = desc.className + ' js-inline-<id>'` (plus any user className) to the component along with all props, and when the forwarded className later reaches a native element the patch consumes the registry entries (delete on read), strips the tokens, and merges the vars into that element's `style`. Vars therefore land on the last native element even through nested wrappers, and descriptors wrapping other descriptors unwrap one layer per resolution pass.
-
-Bail-out = emit exactly what the plugin emits today. No descriptor, no runtime import. This is the universal safety valve.
-
-## Interpolation classification
-
-Interpolations arrive as `__PLACEHOLDER_<i>__` tokens (src/css/placeholderUtils.js) in minified CSS with expressions in `quasi.expressions`.
-
-1. **Static**: `exprPath.evaluate()` is confident and yields string/number → inline the value into the CSS text at compile time.
-2. **Var-compatible (dynamic)**: Arrow/function expression whose body only reads its props param (including destructuring), does NOT reference `.theme`, and whose placeholder sits in a declaration *value* position (heuristic on minified css: placeholder appears after a `:` that comes after the last `{` or `;`). → replace token with `var(--<componentId>-<i>)` and record `['--<componentId>-<i>', <original fn>]`.
-3. **Anything else** (theme access, identifiers referencing other components/keyframes/css results, spread mixins, selector/property/block positions, member calls) → bail out entirely.
-
-The var-compatible check enforces "reads only its own bindings" via a `ReferencedIdentifier` traversal that bails on any identifier without a binding inside the function. TypeScript type-position identifiers are exempt: with syntax-only TS parsing (no TS transform, as in a Vite/oxc build) the `Props` in `(p: Props) => …`, `Array<Props>`, `x as Props`, etc. is visited as a referenced identifier but has no value binding, so identifiers under a `TSType` node (`t.isTSType`) are skipped. This is why typed interpolations and generic tags (`styled.div<Props>`, whose type args sit on the tagged-template node, not the tag) compile. See `test/fixtures/compile-static-ts-type-annotations`.
-
-## CSS compilation
-
-After substitution, wrap in `.<staticClassName>{<css>}` and compile at build time with `stylis@4` (same as styled-components v6): `serialize(compile(input), middleware([prefixer, stringify]))`. `staticClassName = 'js-' + hash(componentId + css)` using src/utils/hash.js. Result is a static rule string embedded in the output.
-
-## Emitted output
+**Plugin** (`src/js-transform.js`, a small Babel transform — no longer a fork of
+babel-plugin-styled-components). It rewrites only the simple styled forms —
+`styled.tag`, `styled('tag')`, `styled(Ident)` — into
 
 ```js
-import styled from 'styled-components'
-import { createStyledElement as _jsCreate } from 'just-styled/runtime'
-
-const Button = /*#__PURE__*/ _jsCreate({
-  component: 'button',
-  className: 'js-1a2b3c',
-  css: '.js-1a2b3c{color:var(--sc-abc-0-0);font-size:14px;}',
-  vars: [['--sc-abc-0-0', props => props.color]],
-  displayName: 'Button',       // only when displayName option is on
-  componentId: 'sc-abc-0',
-  fallback: () => styled.button.withConfig({ displayName: 'Button', componentId: 'sc-abc-0' })`color:${props => props.color};font-size:14px;`,
-})
+createStyled(component, { componentId, displayName })`…template…`
 ```
 
-`vars` fns are the original interpolation expressions, moved verbatim.
+keeping the template's interpolations **live**. It generates a stable
+`componentId` (`sc-<file-hash>-<n>`) and `displayName`, and injects the runtime
+import. `.attrs` / `.withConfig` chains and the `css` / `keyframes` /
+`createGlobalStyle` helpers are left untouched (they run through real
+styled-components). A **zero-interpolation** template is stylis-compiled at
+build time and emitted as `css: "<rule>"` in the config (see Opt 2).
 
-## Runtime (`packages/runtime`, package name `just-styled`)
+**Runtime** (`packages/runtime`, package `just-styled`):
 
-Exports from `just-styled/runtime`:
+- `createStyled` returns a `forwardRef` descriptor carrying the cached template
+  `parts`, `componentId`, and `styledComponentId === componentId` (so it can be
+  a `${Comp}` selector target and a `styled(Descriptor)` target). It is a valid
+  element type, so it renders correctly even with no patch installed.
+- The **JSX runtime wrappers** (`just-styled/jsx-runtime`,
+  `just-styled/jsx-dev-runtime`) and the `createElement` patch intercept a
+  descriptor at element-creation time and resolve it to a host element — so no
+  wrapper fiber is added to the tree.
 
-- `IS_STYLED = Symbol.for('just-styled')`
-- `createStyledElement(desc)` → descriptor: a `React.forwardRef` object carrying the styled-components component contract. `React.forwardRef` gives `$$typeof === Symbol.for('react.forward_ref')`; adding `styledComponentId` (= the static `className`) makes styled-components' `isStyledComponent` true, so the descriptor is a **first-class styled component**: it can be interpolated as a component selector (`${Descriptor} { … }` → `.<className>`, the same class it renders with) and be a `styled(Descriptor)` target. A bare function does not work — `flatten` tests `isFunction` before the styled-component branch and would *invoke* it; a plain object is read as a CSS style object; only a genuine styled component resolves to its selector, and does so consistently across styled-components 6.x. `target`, `attrs`, `foldedComponentIds`, and a no-op `componentStyle` shim are the minimal contract `styled(Descriptor)` folding reads (the descriptor's css already lives in the just-styled sheet, so it contributes no extra rules). With the patch/jsx wrapper installed, resolution intercepts on `IS_STYLED` before React renders the forwardRef, so the descriptor collapses to its host element with **no extra fiber**; the render body runs only in the `as`/`theme` fallback (where a real styled component's fiber is needed anyway) or with neither wrapper nor patch present. The discriminator is a **self-reference** — `element[IS_STYLED] = element`, so a genuine descriptor satisfies `type[IS_STYLED] === type`; a real styled component wrapping a descriptor hoists that value by reference, so its `IS_STYLED` points at the original descriptor and the identity check fails, correctly excluding it (this replaces the old `styledComponentId === undefined` check, unusable now that descriptors carry a `styledComponentId`). Fields:
-  - `[IS_STYLED]: element` (self-reference), `component`, `className`, `styledComponentId`, `displayName` (when the option emitted one)
-  - `getStyle()` → the precompiled css string
-  - `getInlineStyles(props)` → `{ [varName]: value }` from `vars`, skipping null/undefined/false results
-  - `getStyledComponent()` → memoized `desc.fallback()`
-  - `toString()` → `'.' + className` (so `${Button}` in other css keeps working)
-  - Side effect at creation: css registered into a singleton sheet — browser: one `<style data-just-styled>` tag appended with rule text (dedup by className); SSR/no-DOM: collected in memory, exposed via `renderStaticStyles()` / `getStyleTag()`.
-- `installCreateElementPatch()` — idempotent monkey patch of `React.createElement` (and `jsx`/`jsxs` of `react/jsx-runtime` + `react/jsx-dev-runtime` when patchable):
-  - type is a descriptor — detected as `IS_STYLED` present *and* `styledComponentId` absent: real styled-components components that wrap a descriptor inherit `IS_STYLED` via hoist-non-react-statics (it copies the target's own symbols), and those wrappers must render through styled-components untouched or their own css is silently dropped:
-    - props contain `as` or `theme` → render `type.getStyledComponent()` instead (full fidelity).
-    - `component` is a string tag → merge `className = desc.className + ' ' + props.className`, `style = { ...getInlineStyles(props), ...props.style }`, drop non-DOM props (via `@emotion/is-prop-valid`), call original createElement with the tag.
-    - `component` is a component ref → **js-inline hack**: allocate `id`, register `getInlineStyles(props)` in a registry, pass `className = desc.className + ' js-inline-' + id` down (descriptors without vars skip the registry and forward the plain className); when the patch later sees a *native* (string-typed) element whose className contains `js-inline-<id>`, it consumes the registry entry (delete on read), strips the token, and merges the styles into that element's `style`. Registry is a Map with a size cap as a leak guard. Resolution loops, so a component ref that is itself a descriptor unwraps until a plain type remains.
-  - anything else → original createElement untouched.
-- `just-styled/runtime/patch` — side-effect module that calls `installCreateElementPatch()` on load. The babel plugin injects this import into any file where it emits a descriptor.
+## Style resolution (the engine, `packages/runtime/src/engine.js`)
+
+styled-components' own `css()` does the static half of the flatten once at
+definition time: it bakes module values, `css` fragments, style objects and
+`${StyledComponent}` selectors into strings, leaving only prop-dependent
+**functions**. From there:
+
+- **Static** (no functions survive) → resolve once, register a single rule
+  under the `componentId`, and use `componentId` as the class. No per-render
+  work, no hash. (Opt 1)
+- **Zero-interpolation static** → the plugin already compiled the rule at build
+  time; the runtime just registers it (no `css()`/stylis at runtime). (Opt 2)
+- **Dynamic** (a prop function survives) → per render, resolve the functions
+  against props into a CSS string, look it up in a string-keyed cache, and only
+  on a miss run MurmurHash + stylis + inject a `js-<hash>` rule. `componentId`
+  rides along as a marker (for `${Comp}` selectors); the hash class carries the
+  styles. This mirrors styled-components' dynamic-name cache, so re-renders of
+  unchanged styles are a `Map.get`, not a hash.
+
+## Resolution (`resolveDescriptor` in patch-impl.js)
+
+For a descriptor + props:
+
+- `className = componentId` (static) or `componentId + ' ' + js-<hash>`
+  (dynamic), plus any user `className`.
+- `as` prop selects the rendered tag.
+- Native tag → filter non-DOM props (`@emotion/is-prop-valid` + always-kept:
+  `className`/`style`/`children`/`ref`/`on*`/`data-`/`aria-`).
+- Component target → forward all props (minus `as`) plus the `className`, which
+  the component spreads onto its host node (no token trick).
+- A descriptor whose target is itself a descriptor unwraps in a loop.
+
+**No bail-out.** Every styled render is a host element (or a forward to a
+component); there is no fallback to a styled-components wrapper.
+
+## Stylesheet (`sheet.js`)
+
+Browser: rules go through the CSSOM `insertRule` API (incremental, no
+re-parse), with a depth-0 splitter so a compiled string containing `&:hover` /
+`@media` is inserted as separate rules; a per-rule `try/catch` falls back to a
+text node. An in-memory `Map` is the source of truth for `getCss()` / SSR.
+
+## The discriminator
+
+A genuine descriptor self-references under the shared global symbol
+(`element[Symbol.for('just-styled')] === element`). A real styled component that
+hoists the symbol points at the original descriptor, so the identity check
+excludes it — this survives descriptors carrying a `styledComponentId`.
+
+## Known limitations
+
+- **`ThemeProvider` / context theme is not supported.** A host element can't
+  read React context, so `props.theme` is undefined; `p => p.theme.x` is
+  swallowed (that interpolation drops, the rest of the rule applies). Use a
+  module-scope theme constant, or a CSS-variable theme. Reading context would
+  require a per-component fiber, defeating the point.
+- **`keyframes`** interpolated into a template is not injected yet (best-effort;
+  animation may not apply).
+- **`styled(styledComponent)`** (a descriptor wrapping another descriptor): the
+  outer is resolved before the inner, so on an equal-specificity conflict the
+  inner rule (inserted later) can win. Edge case.
+- Per-subtree `StyleSheetManager` config (custom stylis plugins, target sheet,
+  nonce) is not honored on the flattened path.
 
 ## Testing
 
-- Fixture tests (babel-test) under `test/fixtures/compile-static-*` with `compileStatic: true` in `.babelrc`: fully static, static+vars, styled(Component) with and without vars, bail-outs (attrs, theme, styled(obj.Component), selector-position interpolation), interplay with `transpileTemplateLiterals` and `minify: false`.
-- Runtime unit tests (jest + react-dom/server via moduleNameMapper to packages/runtime/src): descriptor shape, sheet injection/SSR collection, patch rendering static className + css vars, `as`/fallback path, js-inline forwarding through a wrapper component and registry delete-on-read hygiene, toString interpolation, real styled-components wrapping a descriptor, rendering without the patch installed.
-- E2E smoke: babel-transform a sample file with the real plugin, evaluate it, render with react-dom/server, assert markup. Covers descriptors wrapping other compiled descriptors (single-element output, both static classes, source-order css) and bailed-out styled calls wrapping a descriptor at module level.
-
-## Known MVP limitations (documented, acceptable)
-
-- Theme-dependent interpolations always take the fallback styled-components path.
-- js-inline registry assumes the wrapper renders its native node in the same synchronous render pass; concurrent-mode edge cases fall back to no inline styles rather than wrong styles. Wrappers that drop the forwarded className lose both the static class and the vars (same failure mode as styled-components itself).
-- `.attrs`, non-identifier component refs, keyframes/css/createGlobalStyle: untouched (future work).
-- Optimization hints from users: future work, discussed separately.
+`test/js-transform.test.js` (plugin emit), `test/runtime/*` (engine, resolution,
+sheet), `test/e2e/*` (compile → render in jsdom), `test/perf/*` +
+`profiling/*` (perf harnesses).

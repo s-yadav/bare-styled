@@ -56,11 +56,24 @@ function buildHostProps(props, className) {
 // Exported so createStyled's forwardRef body can render even without the patch.
 function resolveDescriptor(type, props) {
   const p = props || EMPTY
-  const cssBody = engine.resolveParts(type.parts, p)
-  const genClass = engine.classFor(type.componentId, cssBody)
-  // `componentId` is a stable marker class (for `${Comp}` selectors); `genClass`
-  // carries the resolved styles.
-  const className = type.componentId + ' ' + genClass + (p.className ? ' ' + p.className : '')
+  let styleClass = ''
+  if (type.isStatic) {
+    // Styles never change: resolve+inject once under the componentId, which
+    // then doubles as the style class. No per-render resolve or hash.
+    if (!type._staticDone) {
+      engine.registerStatic(
+        type.componentId,
+        type.css != null ? null : engine.resolveParts(type.parts, EMPTY),
+        type.css // build-time precompiled rule (Opt 2), if the plugin supplied one
+      )
+      type._staticDone = true
+    }
+  } else {
+    // Prop-dependent: componentId is a marker (for `${Comp}` selectors); the
+    // hash class carries the resolved styles.
+    styleClass = ' ' + engine.classFor(type.componentId, engine.resolveParts(type.parts, p))
+  }
+  const className = type.componentId + styleClass + (p.className ? ' ' + p.className : '')
   const target = p.as || type.component
   if (typeof target === 'string') {
     return { type: target, props: buildHostProps(p, className) }

@@ -26,13 +26,13 @@ afterEach(() => {
 const render = el => act(() => createRoot(container).render(el))
 
 describe('descriptor resolution (hash-class, no wrapper fiber)', () => {
-  it('a native-tag descriptor becomes a host element with componentId + hash class', () => {
+  it('a STATIC native-tag descriptor uses just the componentId class (no hash)', () => {
     const Box = createStyled('div', { componentId: 'sc-box' })`color: red;`
     render(React.createElement(Box, null, 'hi'))
     const el = container.querySelector('div')
     expect(el.textContent).toBe('hi')
-    expect(el.className).toMatch(/^sc-box js-[a-z0-9]+$/)
-    expect(getCss()).toMatch(/\.js-[a-z0-9]+\{color:red;\}/)
+    expect(el.className).toBe('sc-box') // static -> componentId only, resolved once
+    expect(getCss()).toMatch(/\.sc-box\{color:red;\}/)
   })
 
   it('distinct resolved styles get distinct classes; identical ones share', () => {
@@ -55,12 +55,12 @@ describe('descriptor resolution (hash-class, no wrapper fiber)', () => {
     expect(el.style.margin).toBe('1px')
   })
 
-  it('styled(Component) forwards the class to the wrapped component (no token)', () => {
+  it('styled(Component) forwards the (dynamic) class to the wrapped component (no token)', () => {
     function Inner({ className }) { return React.createElement('span', { id: 'leaf', className }) }
-    const Wrapped = createStyled(Inner, { componentId: 'sc-w' })`color: green;`
-    render(React.createElement(Wrapped, null))
+    const Wrapped = createStyled(Inner, { componentId: 'sc-w' })`background: ${p => p.color};`
+    render(React.createElement(Wrapped, { color: 'red' }))
     const leaf = container.querySelector('#leaf')
-    expect(leaf.className).toMatch(/^sc-w js-[a-z0-9]+$/)
+    expect(leaf.className).toMatch(/^sc-w js-[a-z0-9]+$/) // dynamic -> componentId + hash
     expect(leaf.className).not.toContain('inline')
   })
 
