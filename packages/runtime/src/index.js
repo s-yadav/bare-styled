@@ -57,7 +57,7 @@ module.exports = {
   createStyled,
   // Root createElement for the automatic runtime's key-after-spread fallback
   // (imported from the import-source root), wrapped to resolve descriptors.
-  createElement: patchImpl.wrapJsx(React.createElement),
+  createElement: patchImpl.wrapCreateElement(React.createElement),
   Fragment: React.Fragment,
   getCss: sheet.getCss,
   renderStaticStyles: sheet.renderStaticStyles,

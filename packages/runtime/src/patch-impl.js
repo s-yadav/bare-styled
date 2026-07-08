@@ -19,9 +19,12 @@ let patchedEntries = null
 
 // A genuine descriptor self-references under the shared symbol; a real styled
 // component that hoisted the symbol points at the original descriptor, so the
-// identity check excludes it.
+// identity check excludes it. The `typeof === 'object'` gate is a hot-path
+// optimization: this runs for EVERY element the app creates, and it lets string
+// tags ('div') and function components skip the symbol property read entirely
+// (descriptors are forwardRef objects).
 function isDescriptor(type) {
-  return Boolean(type && type[IS_STYLED] === type)
+  return type !== null && typeof type === 'object' && type[IS_STYLED] === type
 }
 
 // Props kept on a native tag regardless of @emotion/is-prop-valid.
@@ -70,8 +73,9 @@ function resolveDescriptor(type, props) {
     }
   } else {
     // Prop-dependent: componentId is a marker (for `${Comp}` selectors); the
-    // hash class carries the resolved styles.
-    styleClass = ' ' + engine.classFor(type.componentId, engine.resolveParts(type.parts, p))
+    // hash class carries the resolved styles. classFor caches globally by the
+    // resolved css, so identical styles hash + inject once across all components.
+    styleClass = ' ' + engine.classFor(engine.resolveParts(type.parts, p))
   }
   const className = type.componentId + styleClass + (p.className ? ' ' + p.className : '')
   const target = p.as || type.component
@@ -86,31 +90,51 @@ function resolveDescriptor(type, props) {
   return { type: target, props: next }
 }
 
-function resolve(type, props) {
-  return isDescriptor(type) ? resolveDescriptor(type, props) : null
+// Resolve a descriptor (and unwrap a descriptor-wrapping-descriptor chain) to
+// the final { type, props }. Callers first check isDescriptor, so `type` here
+// is always a descriptor.
+function unwrap(type, props) {
+  let r = resolveDescriptor(type, props)
+  while (isDescriptor(r.type)) r = resolveDescriptor(r.type, r.props)
+  return r
 }
 
-// Wrap createElement/jsx/jsxs/jsxDEV. Hot path: non-descriptors forward
-// untouched after a single symbol read. Resolution loops so a descriptor whose
-// target is itself a descriptor unwraps to a plain type.
-function wrapFactory(original) {
+// The automatic runtime's jsx/jsxs: fixed arity (type, props, key). Forward
+// directly — no `arguments` object, no `.apply` — so the app-wide hot path
+// (every non-styled element) is a single isDescriptor check + a direct call.
+function wrapJsx(original) {
+  return function (type, props, key) {
+    if (!isDescriptor(type)) return original(type, props, key)
+    const r = unwrap(type, props)
+    return original(r.type, r.props, key)
+  }
+}
+
+// jsxDEV carries extra dev args (isStaticChildren, source, self) — forward them.
+function wrapJsxDev(original) {
+  return function (type, props, key, isStaticChildren, source, self) {
+    if (!isDescriptor(type)) return original(type, props, key, isStaticChildren, source, self)
+    const r = unwrap(type, props)
+    return original(r.type, r.props, key, isStaticChildren, source, self)
+  }
+}
+
+// classic createElement is variadic (children as rest args), so it keeps the
+// arguments-based forward.
+function wrapCreateElement(original) {
   return function (type, props) {
-    if (!(type && type[IS_STYLED])) return original.apply(this, arguments)
-    let resolved = null
-    for (let next = resolve(type, props); next !== null; next = resolve(next.type, next.props)) {
-      resolved = next
-    }
-    if (resolved === null) return original.apply(this, arguments)
-    const args = [resolved.type, resolved.props]
+    if (!isDescriptor(type)) return original.apply(this, arguments)
+    const r = unwrap(type, props)
+    const args = [r.type, r.props]
     for (let i = 2; i < arguments.length; i++) args.push(arguments[i])
     return original.apply(this, args)
   }
 }
 
-function patchTarget(target, key) {
+function patchTarget(target, key, factory) {
   if (!target || typeof target[key] !== 'function') return
   const original = target[key]
-  const wrapped = wrapFactory(original)
+  const wrapped = factory(original)
   try {
     target[key] = wrapped
   } catch (e) {
@@ -132,15 +156,15 @@ function installCreateElementPatch() {
   if (installed) return
   installed = true
   patchedEntries = []
-  patchTarget(React, 'createElement')
+  patchTarget(React, 'createElement', wrapCreateElement)
   const jsxRuntime = loadOptionalModule('react/jsx-runtime')
   if (jsxRuntime) {
-    patchTarget(jsxRuntime, 'jsx')
-    patchTarget(jsxRuntime, 'jsxs')
+    patchTarget(jsxRuntime, 'jsx', wrapJsx)
+    patchTarget(jsxRuntime, 'jsxs', wrapJsx)
   }
   const jsxDevRuntime = loadOptionalModule('react/jsx-dev-runtime')
   if (jsxDevRuntime) {
-    patchTarget(jsxDevRuntime, 'jsxDEV')
+    patchTarget(jsxDevRuntime, 'jsxDEV', wrapJsxDev)
   }
 }
 
@@ -157,6 +181,8 @@ function uninstallCreateElementPatch() {
 module.exports = {
   installCreateElementPatch,
   uninstallCreateElementPatch,
-  wrapJsx: wrapFactory,
+  wrapJsx, // jsx / jsxs (type, props, key)
+  wrapJsxDev, // jsxDEV
+  wrapCreateElement, // classic createElement (variadic)
   resolveDescriptor,
 }

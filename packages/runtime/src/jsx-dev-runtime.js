@@ -4,7 +4,7 @@
 'use strict'
 
 const ReactJsxDevRuntime = require('react/jsx-dev-runtime')
-const { wrapJsx } = require('./patch-impl')
+const { wrapJsxDev } = require('./patch-impl')
 
 exports.Fragment = ReactJsxDevRuntime.Fragment
-exports.jsxDEV = wrapJsx(ReactJsxDevRuntime.jsxDEV)
+exports.jsxDEV = wrapJsxDev(ReactJsxDevRuntime.jsxDEV)

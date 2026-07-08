@@ -130,19 +130,22 @@ function registerStatic(componentId, cssBody, precompiled) {
   )
 }
 
-// Generated class for a resolved CSS body. Cached by the resolved string
-// (per componentId), so a repeated/unchanged style is a Map lookup — the
-// expensive MurmurHash + stylis compile + injection run only the FIRST time a
-// given resolved style is seen. This mirrors styled-components' dynamic-name
-// cache and is what keeps re-renders cheap (hashing every render was the
-// bottleneck).
+// Generated class for a resolved CSS body, keyed by the resolved string in a
+// single GLOBAL cache. A repeated/unchanged style — whether the same component
+// re-rendering or a *different* component resolving to identical styles — is one
+// Map lookup with no key allocation; the MurmurHash + stylis compile + injection
+// run only the first time a given resolved style is seen anywhere. Global (not
+// per-descriptor) because styled components are module-level and never GC'd, so
+// per-descriptor caches free nothing and would re-hash the same css per
+// component. The class is hashed from the css alone (componentId is carried
+// separately as a marker class for `${Comp}` selectors — see resolveDescriptor),
+// so identical styles across components share one class and one rule.
 const classCache = new Map()
-function classFor(componentId, cssBody) {
-  const key = componentId + '|' + cssBody
-  const cached = classCache.get(key)
+function classFor(cssBody) {
+  const cached = classCache.get(cssBody)
   if (cached !== undefined) return cached
-  const cls = 'js-' + hash(componentId + cssBody)
-  classCache.set(key, cls)
+  const cls = 'js-' + hash(cssBody)
+  classCache.set(cssBody, cls)
   sheet.registerRule(
     cls,
     serialize(compile('.' + cls + '{' + cssBody + '}'), middleware([prefixer, stringify]))

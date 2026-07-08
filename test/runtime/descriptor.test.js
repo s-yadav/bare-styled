@@ -18,13 +18,15 @@ describe('engine (render-time hash-class resolution)', () => {
   })
 
   it('classFor: same resolved css -> same class (registered once); different -> different', () => {
-    const a = engine.classFor('sc-x', 'color:red;')
-    const a2 = engine.classFor('sc-x', 'color:red;')
-    const b = engine.classFor('sc-x', 'color:blue;')
+    const a = engine.classFor('color:red;')
+    const a2 = engine.classFor('color:red;')
+    const b = engine.classFor('color:blue;')
     expect(a).toBe(a2)
     expect(a).not.toBe(b)
     expect(a).toMatch(/^js-[a-z0-9]+$/)
-    // registered once each, into the shared sheet
+    // global dedup: same resolved css from any component yields the same class
+    // (hashed from css alone) and is hashed + registered exactly once.
+    expect(engine.classFor('color:red;')).toBe(a)
     expect((getCss().match(new RegExp('\\.' + a + '\\{', 'g')) || []).length).toBe(1)
     expect(getCss()).toContain('.' + b + '{color:blue;}')
   })
