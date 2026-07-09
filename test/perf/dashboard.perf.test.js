@@ -42,6 +42,9 @@ global.IS_REACT_ACT_ENVIRONMENT = true
 
 const ROWS = +process.env.DASH_ROWS || 150
 const ITERS = +process.env.DASH_ITERS || 20
+// Row shape: 'mixed' (static + dynamic cells — real-world, default), 'static'
+// (all-static rows), 'dynamic' (the old all-dynamic rows).
+const MODE = process.env.DASH_MODE || 'mixed'
 
 // Escaped \${…} are styled-components interpolations (flattened by just-styled);
 // {…} are ordinary JSX expressions. No ThemeProvider (a known just-styled gap) —
@@ -107,9 +110,60 @@ const SOURCE = `
   // ---- .attrs -> left untouched, runs on real styled-components (fallback) ----
   const Field = styled.input.attrs({ type:'text' })\`border:1px solid \${theme.border}; border-radius:6px; padding:6px 10px;\`
 
+  // ---- STATIC cells, rendered at row scale (rows x N elements) ----
+  // zero-interpolation -> build-time compiled (Opt 2)
+  const IdCell = styled.td\`padding:6px 12px; border-top:1px solid #e5e7eb; color:#6b7280; font-variant-numeric:tabular-nums;\`
+  const PillStatic = styled.span\`padding:2px 8px; border-radius:10px; font-size:12px; color:#fff; background:#64748b;\`
+  // const-member interpolations -> static-after-flatten AT BUILD (resolveMember precompile)
+  const NameCell = styled.td\`padding:6px 12px; border-top:1px solid \${theme.border}; color:\${theme.fg};\`
+  // css fragment survives the plugin -> static-after-flatten AT RUNTIME
+  const mono = css\`font-variant-numeric:tabular-nums; text-align:right;\`
+  const ScoreCell = styled.td\`padding:6px 12px; border-top:1px solid \${theme.border}; color:\${theme.muted}; \${mono}\`
+  // static styled(StyledComponent) -> build-precompiled extender over a runtime-static base
+  const TotalCell = styled(ScoreCell)\`font-weight:600; color:#111827;\`
+
   const NAV = ['Home','Reports','Data','Pipelines','Settings']
 
-  export function App({ rows, tick }) {
+  function Cells({ r, tick, mode }) {
+    const status = ['ok', 'warn', 'err'][(r + tick) % 3]
+    if (mode === 'static') {
+      return (
+        <>
+          <IdCell>{r}</IdCell>
+          <NameCell>Item {r}</NameCell>
+          <td style={{ padding:'6px 12px' }}><PillStatic>{status}</PillStatic></td>
+          <NameCell>user{r % 7}</NameCell>
+          <ScoreCell>{(r * 13) % 1000}</ScoreCell>
+          <TotalCell>{(r * 29 + tick) % 100}</TotalCell>
+        </>
+      )
+    }
+    if (mode === 'dynamic') {
+      return (
+        <>
+          <DataCell>{r}</DataCell>
+          <DataCell>Item {r}</DataCell>
+          <td style={{ padding:'6px 12px' }}><StatusPill $status={status}>{status}</StatusPill></td>
+          <DataCell $dim>user{r % 7}</DataCell>
+          <Tint $tint={'hsl(' + ((r * 7 + tick) % 360) + ' 55% 45%)'}>{(r * 13) % 1000}</Tint>
+          <DataCell>{(r * 29 + tick) % 100}</DataCell>
+        </>
+      )
+    }
+    // mixed (default): static id/name/score cells + dynamic status/owner/tint
+    return (
+      <>
+        <IdCell>{r}</IdCell>
+        <NameCell>Item {r}</NameCell>
+        <td style={{ padding:'6px 12px' }}><StatusPill $status={status}>{status}</StatusPill></td>
+        <DataCell $dim>user{r % 7}</DataCell>
+        <Tint $tint={'hsl(' + ((r * 7 + tick) % 360) + ' 55% 45%)'}>{(r * 13) % 1000}</Tint>
+        <TotalCell>{(r * 29 + tick) % 100}</TotalCell>
+      </>
+    )
+  }
+
+  export function App({ rows, tick, mode = 'mixed' }) {
     return (
       <AppShell>
         <TopBar>
@@ -142,19 +196,11 @@ const SOURCE = `
                   <tr><Th>ID</Th><Th>Name</Th><Th>Status</Th><Th>Owner</Th><Th>Tint</Th><Th>Score</Th></tr>
                 </THead>
                 <tbody>
-                  {rows.map(r => {
-                    const status = ['ok', 'warn', 'err'][(r + tick) % 3]
-                    return (
-                      <Row key={r} $odd={r % 2 === 0}>
-                        <DataCell>{r}</DataCell>
-                        <DataCell>Item {r}</DataCell>
-                        <td style={{ padding:'6px 12px' }}><StatusPill $status={status}>{status}</StatusPill></td>
-                        <DataCell $dim>user{r % 7}</DataCell>
-                        <Tint $tint={'hsl(' + ((r * 7 + tick) % 360) + ' 55% 45%)'}>{(r * 13) % 1000}</Tint>
-                        <DataCell>{(r * 29 + tick) % 100}</DataCell>
-                      </Row>
-                    )
-                  })}
+                  {rows.map(r => (
+                    <Row key={r} $odd={r % 2 === 0}>
+                      <Cells r={r} tick={tick} mode={mode} />
+                    </Row>
+                  ))}
                 </tbody>
               </table>
             </TableWrap>
@@ -189,7 +235,7 @@ const median = arr => { const s = [...arr].sort((a, b) => a - b); return s[Math.
 
 function bench(App, countRules) {
   const rows = Array.from({ length: ROWS }, (_, i) => i)
-  const el = tick => React.createElement(App, { rows, tick })
+  const el = tick => React.createElement(App, { rows, tick, mode: MODE })
 
   const mountWith = () => {
     const c = document.createElement('div'); document.body.appendChild(c)
@@ -236,7 +282,7 @@ test(`dashboard mount/re-render: styled-components vs just-styled (${ROWS} rows)
   const pct = (a, b) => (((a - b) / a) * 100).toFixed(0) + '%'
   // eslint-disable-next-line no-console
   console.log(
-    `\ndashboard: styled-components vs just-styled — ${ROWS} rows (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
+    `\ndashboard: styled-components vs just-styled — ${ROWS} rows, cells=${MODE} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
     `\n                 mount      re-render` +
     `\n  styled-comp   ${sc.mount.toFixed(2).padStart(6)}     ${sc.update.toFixed(2).padStart(6)}` +
     `\n  just-styled   ${js.mount.toFixed(2).padStart(6)}     ${js.update.toFixed(2).padStart(6)}` +

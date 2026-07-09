@@ -2,15 +2,27 @@
 //   - styled-components (real, wrapper components)
 //   - just-styled (plugin -> createStyled -> runtime, flattened to host elements)
 //
-// Exercises every runtime path at once: static chrome (zero-interp -> build-time
-// compiled, and static-after-flatten), low-cardinality dynamic (NavItem/Row/
-// StatusPill/TrendBadge/Card/Button -> a handful of shared classes via the global
-// cache), high-cardinality dynamic (Tint -> a unique style per row),
-// styled(StyledComponent) (IconButton), styled(NonStyled) (DataCell), `as`
-// polymorphism, `${Comp}` component selectors, and `.attrs` (untouched -> real SC
-// fallback). No ThemeProvider (a known just-styled gap) — a module `theme`
-// constant that resolves statically. Transient ($) props are dropped from the DOM
-// by both libraries.
+// Exercises every runtime path at once, with STATIC components at row scale (the
+// real-world shape: most table cells / labels / chrome never vary per render):
+//   - zero-interpolation static (chrome + IdCell/PillStatic) -> build-time
+//     stylis-compiled by the plugin (Opt 2), registered under componentId.
+//   - static-after-flatten AT BUILD (NameCell: `${theme.border}` const-member
+//     interpolations resolved by the plugin's resolveMember) -> also precompiled.
+//   - static-after-flatten AT RUNTIME (ScoreCell: a css`` fragment survives the
+//     plugin, css() flattens it to strings at definition) -> idle-precompiled
+//     (requestIdleCallback) and registered on first render.
+//   - static styled(StyledComponent) (TotalCell extends ScoreCell) -> group-
+//     ordered cascade with a descriptor unwrap chain, both rules static.
+//   - low-cardinality dynamic (NavItem/Row/StatusPill/TrendBadge/Card/Button ->
+//     a handful of per-component cached classes), high-cardinality dynamic
+//     (Tint -> a unique style per row), styled(NonStyled) (DataCell), `as`
+//     polymorphism, `${Comp}` component selectors, and `.attrs` (untouched ->
+//     real SC fallback).
+// The `mode` prop picks the row shape: 'mixed' (default; static + dynamic cells,
+// closest to a real app), 'static' (all-static rows; isolates the static path),
+// 'dynamic' (the old all-dynamic rows). No ThemeProvider (a known just-styled
+// gap) — a module `theme` constant that resolves statically. Transient ($) props
+// are dropped from the DOM by both libraries.
 import styled, { css } from 'styled-components'
 
 const theme = { fg: '#1f2937', muted: '#6b7280', border: '#e5e7eb', accent: '#4f46e5', surface: '#f9fafb' }
@@ -65,6 +77,18 @@ const DataCell = styled(CellBase)`padding:6px 12px; border-top:1px solid ${theme
 // ---- high-cardinality dynamic (unique resolved style per row) ----
 const Tint = styled.td`padding:6px 12px; color:${p => p.$tint};`
 
+// ---- STATIC cells, rendered at row scale (rows x N elements) ----
+// zero-interpolation -> build-time compiled (Opt 2)
+const IdCell = styled.td`padding:6px 12px; border-top:1px solid #e5e7eb; color:#6b7280; font-variant-numeric:tabular-nums;`
+const PillStatic = styled.span`padding:2px 8px; border-radius:10px; font-size:12px; color:#fff; background:#64748b;`
+// const-member interpolations -> static-after-flatten AT BUILD (resolveMember precompile)
+const NameCell = styled.td`padding:6px 12px; border-top:1px solid ${theme.border}; color:${theme.fg};`
+// css`` fragment survives the plugin -> static-after-flatten AT RUNTIME (idle precompile)
+const mono = css`font-variant-numeric:tabular-nums; text-align:right;`
+const ScoreCell = styled.td`padding:6px 12px; border-top:1px solid ${theme.border}; color:${theme.muted}; ${mono}`
+// static styled(StyledComponent) -> build-precompiled extender over a runtime-static base
+const TotalCell = styled(ScoreCell)`font-weight:600; color:#111827;`
+
 // ---- .attrs -> left untouched, runs on real styled-components (fallback) ----
 const Field = styled.input.attrs({ type: 'text' })`border:1px solid ${theme.border}; border-radius:6px; padding:6px 10px;`
 
@@ -78,7 +102,47 @@ function tintFor(mode, r, tick) {
   return 'hsl(' + ((r * 7 + tick) % 360) + ' 55% 45%)'
 }
 
-export function App({ rows, tick, tintMode = 'unique' }) {
+// One table row; `mode` picks the cell mix (see header comment).
+function Cells({ r, tick, tintMode, mode }) {
+  const status = ['ok', 'warn', 'err'][(r + tick) % 3]
+  if (mode === 'static') {
+    return (
+      <>
+        <IdCell>{r}</IdCell>
+        <NameCell>Item {r}</NameCell>
+        <td style={{ padding: '6px 12px' }}><PillStatic>{status}</PillStatic></td>
+        <NameCell>user{r % 7}</NameCell>
+        <ScoreCell>{(r * 13) % 1000}</ScoreCell>
+        <TotalCell>{(r * 29 + tick) % 100}</TotalCell>
+      </>
+    )
+  }
+  if (mode === 'dynamic') {
+    return (
+      <>
+        <DataCell>{r}</DataCell>
+        <DataCell>Item {r}</DataCell>
+        <td style={{ padding: '6px 12px' }}><StatusPill $status={status}>{status}</StatusPill></td>
+        <DataCell $dim>user{r % 7}</DataCell>
+        <Tint $tint={tintFor(tintMode, r, tick)}>{(r * 13) % 1000}</Tint>
+        <DataCell>{(r * 29 + tick) % 100}</DataCell>
+      </>
+    )
+  }
+  // mixed (default): static id/name/score cells + dynamic status/owner/tint
+  return (
+    <>
+      <IdCell>{r}</IdCell>
+      <NameCell>Item {r}</NameCell>
+      <td style={{ padding: '6px 12px' }}><StatusPill $status={status}>{status}</StatusPill></td>
+      <DataCell $dim>user{r % 7}</DataCell>
+      <Tint $tint={tintFor(tintMode, r, tick)}>{(r * 13) % 1000}</Tint>
+      <TotalCell>{(r * 29 + tick) % 100}</TotalCell>
+    </>
+  )
+}
+
+export function App({ rows, tick, tintMode = 'unique', mode = 'mixed' }) {
   return (
     <AppShell>
       <TopBar>
@@ -111,19 +175,11 @@ export function App({ rows, tick, tintMode = 'unique' }) {
                 <tr><Th>ID</Th><Th>Name</Th><Th>Status</Th><Th>Owner</Th><Th>Tint</Th><Th>Score</Th></tr>
               </THead>
               <tbody>
-                {rows.map(r => {
-                  const status = ['ok', 'warn', 'err'][(r + tick) % 3]
-                  return (
-                    <Row key={r} $odd={r % 2 === 0}>
-                      <DataCell>{r}</DataCell>
-                      <DataCell>Item {r}</DataCell>
-                      <td style={{ padding: '6px 12px' }}><StatusPill $status={status}>{status}</StatusPill></td>
-                      <DataCell $dim>user{r % 7}</DataCell>
-                      <Tint $tint={tintFor(tintMode, r, tick)}>{(r * 13) % 1000}</Tint>
-                      <DataCell>{(r * 29 + tick) % 100}</DataCell>
-                    </Row>
-                  )
-                })}
+                {rows.map(r => (
+                  <Row key={r} $odd={r % 2 === 0}>
+                    <Cells r={r} tick={tick} tintMode={tintMode} mode={mode} />
+                  </Row>
+                ))}
               </tbody>
             </table>
           </TableWrap>

@@ -7,12 +7,24 @@ import { App as JSApp } from './.build/js-dashboard.js'
 
 const median = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)] }
 
+// Top-level rule count of a compiled css string (brace depth 0).
+function countTopRules(css) {
+  let depth = 0, n = 0
+  for (let i = 0; i < css.length; i++) {
+    const ch = css.charCodeAt(i)
+    if (ch === 123) depth++
+    else if (ch === 125 && --depth === 0) n++
+  }
+  return n
+}
+
 // Synchronous mount + re-render timing, forcing a full style+layout flush
-// (offsetHeight) each render so browser recalc/layout is included. `isJS` counts
-// the dynamic (js-) classes the runtime generated, to show the global-cache dedup.
-function bench(App, rows, iters, tintMode, isJS) {
+// (offsetHeight) each render so browser recalc/layout is included. For the js
+// build we report dynamic (js-) classes AND total rules (static rules register
+// under their componentId, so js- alone under-counts in static/mixed modes).
+function bench(App, rows, iters, tintMode, mode, isJS) {
   const rowsArr = Array.from({ length: rows }, (_, i) => i)
-  const el = tick => React.createElement(App, { rows: rowsArr, tick, tintMode })
+  const el = tick => React.createElement(App, { rows: rowsArr, tick, tintMode, mode })
 
   let nodeCount = 0
   for (let w = 0; w < 3; w++) {
@@ -44,14 +56,17 @@ function bench(App, rows, iters, tintMode, isJS) {
   }
   flushSync(() => root.unmount()); c.remove()
 
-  const ruleCount = isJS ? (getCss().match(/\.js-/g) || []).length : null
-  return { mount: median(mount), update: median(update), nodeCount, ruleCount }
+  const css = isJS ? getCss() : null
+  const ruleCount = isJS ? (css.match(/\.js-/g) || []).length : null
+  const totalRules = isJS ? countTopRules(css) : null
+  return { mount: median(mount), update: median(update), nodeCount, ruleCount, totalRules }
 }
 
 function App() {
   const [rows, setRows] = React.useState(200)
   const [iters, setIters] = React.useState(15)
   const [tintMode, setTintMode] = React.useState('unique')
+  const [mode, setMode] = React.useState('mixed')
   const [busy, setBusy] = React.useState(false)
   const [rowsData, setRowsData] = React.useState([])
   const [status, setStatus] = React.useState('Ready.')
@@ -61,9 +76,9 @@ function App() {
     requestAnimationFrame(() => setTimeout(() => {
       try {
         const out = []
-        if (which === 'styled-components' || which === 'both') out.push(['styled-components', bench(SCApp, rows, iters, tintMode, false)])
-        if (which === 'just-styled' || which === 'both') { __resetSheet(); out.push(['just-styled', bench(JSApp, rows, iters, tintMode, true)]) }
-        setRowsData(prev => [...prev, ...out.map(([name, r]) => ({ name, rows, tintMode, ...r }))])
+        if (which === 'styled-components' || which === 'both') out.push(['styled-components', bench(SCApp, rows, iters, tintMode, mode, false)])
+        if (which === 'just-styled' || which === 'both') { __resetSheet(); out.push(['just-styled', bench(JSApp, rows, iters, tintMode, mode, true)]) }
+        setRowsData(prev => [...prev, ...out.map(([name, r]) => ({ name, rows, tintMode, mode, ...r }))])
         setStatus('Done: ' + which + (out[0] ? ' — ' + out[0][1].nodeCount + ' DOM nodes/tree' : ''))
       } catch (e) {
         setStatus('Error: ' + (e && e.message || e)); console.error(e)
@@ -79,8 +94,8 @@ function App() {
     if (inspectRootRef.current) inspectRootRef.current.unmount()
     inspectRootRef.current = createRoot(inspectRef.current)
     const r = Array.from({ length: Math.min(rows, 20) }, (_, i) => i)
-    inspectRootRef.current.render(React.createElement(Which, { rows: r, tick: 0, tintMode }))
-    setStatus('Inspecting ' + which + ' (' + r.length + ' rows, tint=' + tintMode + ') — open DevTools on the panel below')
+    inspectRootRef.current.render(React.createElement(Which, { rows: r, tick: 0, tintMode, mode }))
+    setStatus('Inspecting ' + which + ' (' + r.length + ' rows, tint=' + tintMode + ', mode=' + mode + ') — open DevTools on the panel below')
   }
 
   const num = (v, set) => React.createElement('input', {
@@ -97,10 +112,15 @@ function App() {
       'a style+layout flush). For the recalc/layout/paint split, record a run in the DevTools Performance panel.'),
     React.createElement('div', null,
       'rows ', num(rows, setRows), '  iters ', num(iters, setIters),
+      '  cells ',
+      React.createElement('select', { value: mode, disabled: busy, style: { font: 'inherit' }, onChange: e => setMode(e.target.value) },
+        React.createElement('option', { value: 'mixed' }, 'mixed (static + dynamic — real-world)'),
+        React.createElement('option', { value: 'static' }, 'static (all cells static — isolates static path)'),
+        React.createElement('option', { value: 'dynamic' }, 'dynamic (all cells dynamic)')),
       '  tint ',
       React.createElement('select', { value: tintMode, disabled: busy, style: { font: 'inherit' }, onChange: e => setTintMode(e.target.value) },
-        React.createElement('option', { value: 'unique' }, 'unique per row (SC class explosion)'),
-        React.createElement('option', { value: 'few' }, 'few (3 shared — global cache = 3 classes)')),
+        React.createElement('option', { value: 'unique' }, 'unique per row (per-variant class per row)'),
+        React.createElement('option', { value: 'few' }, 'few (3 shared values)')),
       '  ≈ ', (rows * 6 + 40), ' host nodes/tree'),
     React.createElement('p', null,
       React.createElement('button', { onClick: run('both'), disabled: busy, style: { font: 'inherit', padding: '6px 12px', marginRight: 8 } }, 'Run both'),
@@ -110,11 +130,11 @@ function App() {
     React.createElement('div', { style: { fontWeight: 600, minHeight: '1.4em' } }, status),
     React.createElement('table', { style: { borderCollapse: 'collapse', marginTop: 12, fontVariantNumeric: 'tabular-nums' } },
       React.createElement('tbody', null,
-        React.createElement('tr', null, ['model', 'tint', 'rows', 'DOM nodes', 'js- classes', 'mount ms (median)', 're-render ms (median)'].map((h, i) =>
-          React.createElement('th', { key: i, style: { border: '1px solid #ccc', padding: '4px 10px', textAlign: i < 3 ? 'left' : 'right' } }, h))),
+        React.createElement('tr', null, ['model', 'cells', 'tint', 'rows', 'DOM nodes', 'js- classes', 'rules', 'mount ms (median)', 're-render ms (median)'].map((h, i) =>
+          React.createElement('th', { key: i, style: { border: '1px solid #ccc', padding: '4px 10px', textAlign: i < 4 ? 'left' : 'right' } }, h))),
         rowsData.map((r, i) =>
-          React.createElement('tr', { key: i }, [r.name, r.tintMode, r.rows, r.nodeCount, r.ruleCount == null ? '—' : r.ruleCount, r.mount.toFixed(2), r.update.toFixed(2)].map((v, j) =>
-            React.createElement('td', { key: j, style: { border: '1px solid #ccc', padding: '4px 10px', textAlign: j < 3 ? 'left' : 'right' } }, v))))),
+          React.createElement('tr', { key: i }, [r.name, r.mode, r.tintMode, r.rows, r.nodeCount, r.ruleCount == null ? '—' : r.ruleCount, r.totalRules == null ? '—' : r.totalRules, r.mount.toFixed(2), r.update.toFixed(2)].map((v, j) =>
+            React.createElement('td', { key: j, style: { border: '1px solid #ccc', padding: '4px 10px', textAlign: j < 4 ? 'left' : 'right' } }, v))))),
     React.createElement('div', { style: { marginTop: 20 } },
       React.createElement('b', null, 'Inspect (leaves DOM mounted): '),
       React.createElement('button', { onClick: inspect('styled-components'), disabled: busy, style: { font: 'inherit', padding: '4px 10px', marginRight: 8 } }, 'styled-components'),
