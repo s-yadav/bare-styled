@@ -6,15 +6,17 @@
  * through just-styled, mounted and re-rendered in jsdom. This is the
  * "everything at once" test — it exercises every path the runtime special-cases:
  *
- *   - static chrome (AppShell, TopBar, Sidebar, Th, ...) — zero-interpolation
- *     templates the plugin pre-compiles at build time (Opt 2), or static-after-
- *     flatten templates registered once under their componentId (no per-render
- *     hash).
+ *   - static chrome (AppShell, TopBar, Sidebar, Th, ...) AND static cells at row
+ *     scale (IdCell/PillStatic zero-interp -> build-time compiled (Opt 2);
+ *     NameCell const-member -> build-time via resolveMember; ScoreCell css``
+ *     fragment -> static-after-flatten at runtime; TotalCell static
+ *     styled(StyledComponent) extender) — each registered once under its
+ *     componentId, no per-render hash. DASH_MODE picks the row shape:
+ *     mixed (default) / static / dynamic.
  *   - low-cardinality dynamic (NavItem active, Row zebra, StatusPill, TrendBadge,
  *     Card trend, Button primary) — hundreds of elements collapsing to a handful
- *     of distinct resolved styles. The GLOBAL class cache means each distinct
- *     style is hashed + injected exactly ONCE across the whole app, no matter how
- *     many components or elements produce it.
+ *     of distinct resolved styles, each hashed + injected once per component
+ *     (per-component class cache, matching styled-components).
  *   - high-cardinality dynamic (Tint) — a unique resolved style per table row, so
  *     every cell misses the cache and pays a real hash + insert (worst case).
  *   - styled(StyledComponent) (IconButton) and styled(NonStyled) (DataCell).

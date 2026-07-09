@@ -50,4 +50,35 @@ describe('sheet in the browser (CSSOM insertRule)', () => {
     sheet.registerRule(0, 'js-bbb', '.js-bbb{color:blue;}')
     expect(domCss()).toContain('.js-bbb{color:blue;}')
   })
+
+  it('accepts a pre-split rules array (engine rulesheet output)', () => {
+    sheet.registerRule(0, 'js-arr', ['.js-arr{color:red;}', '.js-arr:hover{color:blue;}'])
+    expect(tag().sheet.cssRules).toHaveLength(2)
+    expect(sheet.getCss()).toBe('.js-arr{color:red;}.js-arr:hover{color:blue;}')
+  })
+
+  it('does not split on braces inside quoted strings (content:"}")', () => {
+    sheet.registerRule(0, 'js-q', '.js-q{content:"}";}.js-q2{color:red;}')
+    expect(tag().sheet.cssRules).toHaveLength(2)
+    expect(domCss()).toContain('.js-q2{color:red;}')
+  })
+
+  it('sends CSSOM-rejected rules to a SEPARATE fallback element, keeping the main sheet intact', () => {
+    sheet.registerRule(0, 'js-ok1', '.js-ok1{color:red;}')
+    // one good rule + one the CSSOM rejects, registered together
+    sheet.registerRule(0, 'js-mix', ['.js-mix{color:green;}', 'garbage-not-a-rule'])
+    sheet.registerRule(0, 'js-ok2', '.js-ok2{color:blue;}')
+
+    // main element: only CSSOM rules, none lost, order preserved
+    expect(domCss()).toBe('.js-ok1{color:red;}.js-mix{color:green;}.js-ok2{color:blue;}')
+    // main element has NO text content (text would re-parse + wipe the sheet in browsers)
+    expect(tag().textContent).toBe('')
+    // rejected rule landed in the fallback element as text
+    const fb = document.head.querySelector('style[data-just-styled-fallback]')
+    expect(fb).not.toBeNull()
+    expect(fb.textContent).toBe('garbage-not-a-rule')
+    // fallback element is removed on reset too
+    sheet.__resetSheet()
+    expect(document.head.querySelector('style[data-just-styled-fallback]')).toBeNull()
+  })
 })

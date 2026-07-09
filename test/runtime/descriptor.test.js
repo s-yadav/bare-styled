@@ -29,6 +29,23 @@ describe('engine (render-time hash-class resolution)', () => {
     expect(getCss()).toContain('.' + b + '{color:blue;}')
   })
 
+  it('does not vendor-prefix by default; setVendorPrefixes(true) opts in', () => {
+    const d = { componentId: 'sc-vp', group: 0 }
+    engine.classFor(d, 'display:flex;')
+    expect(getCss()).toContain('{display:flex;}')
+    expect(getCss()).not.toContain('-webkit-')
+
+    engine.setVendorPrefixes(true)
+    try {
+      __resetSheet()
+      const d2 = { componentId: 'sc-vp2', group: 0 }
+      engine.classFor(d2, 'display:flex;')
+      expect(getCss()).toContain('-webkit-')
+    } finally {
+      engine.setVendorPrefixes(false)
+    }
+  })
+
   it('classFor: per-component hashing — different components, same css -> DIFFERENT classes', () => {
     // (No cross-component dedup: each rule belongs to one component/group so the
     // sheet can order it. Matches styled-components.)

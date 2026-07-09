@@ -10,15 +10,21 @@
 //
 // In the browser rules go into a single <style data-just-styled> via the CSSOM
 // insertRule API (positional). Without a DOM they are collected in memory for
-// SSR/getCss, still in group order.
+// SSR/getCss, still in group order. Rules the CSSOM rejects go into a SEPARATE
+// <style data-just-styled-fallback> as text — never into the main element:
+// mutating a <style>'s text content makes the browser re-parse it and REPLACE
+// its CSSStyleSheet, silently discarding every rule previously added via
+// insertRule. (Rejected rules are typically selectors the engine can't parse
+// anyway — e.g. another vendor's pseudo-elements — so best-effort text is fine.)
 'use strict'
 
 const registered = new Set() // className -> inserted once (dedup)
-const groupRules = [] // groupRules[g] = [css, ...] in insertion order (memory / SSR / getCss)
+const groupRules = [] // groupRules[g] = [rule, ...] in insertion order (memory / SSR / getCss)
 const groupSizes = [] // groupSizes[g] = # of CSSOM rules inserted for group g (browser index math)
 
 let styleElement = null
 let cssomSheet = null
+let fallbackElement = null // text-only element for CSSOM-rejected rules
 
 function getStyleElement() {
   if (styleElement && styleElement.parentNode) return styleElement
@@ -29,16 +35,34 @@ function getStyleElement() {
   return styleElement
 }
 
+function getFallbackElement() {
+  if (fallbackElement && fallbackElement.parentNode) return fallbackElement
+  fallbackElement = document.createElement('style')
+  fallbackElement.setAttribute('data-just-styled-fallback', '')
+  document.head.appendChild(fallbackElement)
+  return fallbackElement
+}
+
 // Split a compiled css string into individual top-level rules (CSSOM insertRule
-// takes one rule at a time). Splits at brace depth 0, so @media{...} blocks stay
-// intact as a single rule.
+// takes one rule at a time). Only used for the plugin's build-time precompiled
+// strings — the engine passes rules as an array, collected one at a time by
+// stylis's rulesheet middleware at serialize time. Splits at brace depth 0
+// (@media{...} blocks stay intact) and ignores braces inside quoted strings
+// (content:"}" must not end a rule).
 function splitRules(css) {
   const out = []
   let depth = 0
   let start = 0
+  let quote = 0 // charCode of the open quote, 0 when outside strings
   for (let i = 0; i < css.length; i++) {
     const ch = css.charCodeAt(i)
-    if (ch === 123) depth++ // {
+    if (quote) {
+      if (ch === 92) i++ // backslash: skip escaped char
+      else if (ch === quote) quote = 0
+      continue
+    }
+    if (ch === 34 || ch === 39) quote = ch // " or '
+    else if (ch === 123) depth++ // {
     else if (ch === 125) {
       // }
       depth--
@@ -58,17 +82,21 @@ function groupStart(g) {
   return n
 }
 
-// Register a compiled rule for `group`, deduped by className. New rules are
-// inserted at the END of their group's span, keeping the sheet ordered by group.
+// Register a compiled rule for `group`, deduped by className. `css` is either an
+// array of individual rules (from the engine's rulesheet-collected serialize) or
+// a compiled string (the plugin's build-time precompiled css), split here. New
+// rules are inserted at the END of their group's span, keeping the sheet ordered
+// by group.
 function registerRule(group, className, css) {
   if (registered.has(className)) return
   registered.add(className)
-  ;(groupRules[group] || (groupRules[group] = [])).push(css)
+  const parts = Array.isArray(css) ? css : splitRules(css)
+  const bucket = groupRules[group] || (groupRules[group] = [])
+  for (let i = 0; i < parts.length; i++) bucket.push(parts[i])
 
   if (typeof document === 'undefined') return
   const el = getStyleElement()
   const sheet = cssomSheet || el.sheet
-  const parts = splitRules(css)
   if (sheet && typeof sheet.insertRule === 'function') {
     let idx = groupStart(group) + (groupSizes[group] || 0) // end of this group's span
     for (let i = 0; i < parts.length; i++) {
@@ -77,12 +105,15 @@ function registerRule(group, className, css) {
         idx++
         groupSizes[group] = (groupSizes[group] || 0) + 1
       } catch (e) {
-        // Anything the CSSOM rejects: drop to a text node (order best-effort).
-        el.appendChild(document.createTextNode(parts[i]))
+        // CSSOM rejected the rule (e.g. a selector this browser can't parse).
+        // Text goes to the SEPARATE fallback element — appending text to the
+        // main element would re-parse it and wipe its insertRule'd sheet.
+        getFallbackElement().appendChild(document.createTextNode(parts[i]))
       }
     }
   } else {
-    el.appendChild(document.createTextNode(css))
+    // No CSSOM at all: pure text mode on the main element (nothing to wipe).
+    for (let i = 0; i < parts.length; i++) el.appendChild(document.createTextNode(parts[i]))
   }
 }
 
@@ -109,8 +140,12 @@ function __resetSheet() {
   if (styleElement && styleElement.parentNode) {
     styleElement.parentNode.removeChild(styleElement)
   }
+  if (fallbackElement && fallbackElement.parentNode) {
+    fallbackElement.parentNode.removeChild(fallbackElement)
+  }
   styleElement = null
   cssomSheet = null
+  fallbackElement = null
 }
 
 module.exports = {

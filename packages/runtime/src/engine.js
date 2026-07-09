@@ -12,10 +12,38 @@
 // leaving only prop-dependent functions. We call those functions per render.
 'use strict'
 
-const { compile, serialize, stringify, middleware, prefixer } = require('stylis')
+const { compile, serialize, stringify, middleware, prefixer, rulesheet } = require('stylis')
 const sheet = require('./sheet')
 
 const EMPTY = {}
+
+// Vendor prefixing is OPT-IN, matching styled-components v6 (which no longer
+// prefixes by default). Prefixing costs extra work per stylis compile and
+// roughly doubles rule size for legacy-flexbox-era output modern browsers
+// don't need. Apps that need it call setVendorPrefixes(true) once at startup
+// (and pass `vendorPrefixes: true` to the babel plugin so build-time
+// precompiled rules match).
+let vendorPrefixes = false
+function setVendorPrefixes(on) {
+  vendorPrefixes = !!on
+}
+
+// Compile a css string into an ARRAY of individual serialized rules, collected
+// by stylis's rulesheet middleware. Rule-at-a-time output is what the sheet's
+// CSSOM insertRule needs; collecting during serialize avoids re-splitting the
+// blob (brace-counting a serialized string breaks on braces inside quoted
+// strings like content:"}").
+function compileRules(css) {
+  const rules = []
+  const collect = rulesheet(function (rule) {
+    rules.push(rule)
+  })
+  serialize(
+    compile(css),
+    middleware(vendorPrefixes ? [prefixer, stringify, collect] : [stringify, collect])
+  )
+  return rules
+}
 
 let scCss = null
 try {
@@ -120,12 +148,9 @@ function isStatic(parts) {
   return true
 }
 
-// Serialize a static component's rule (resolve parts -> stylis compile -> prefix).
+// Compile a static component's rule (resolve parts -> stylis) to a rules array.
 function serializeStatic(componentId, parts) {
-  return serialize(
-    compile('.' + componentId + '{' + resolveParts(parts, EMPTY) + '}'),
-    middleware([prefixer, stringify])
-  )
+  return compileRules('.' + componentId + '{' + resolveParts(parts, EMPTY) + '}')
 }
 
 // ---- idle precompilation of static rules ------------------------------------
@@ -144,7 +169,7 @@ function serializeStatic(componentId, parts) {
 // two paths never double-compile, so no explicit per-item cancellation is needed.
 // Degrades to today's inline path where requestIdleCallback is unavailable
 // (SSR / jsdom / older Safari).
-const precomputed = new Map() // componentId -> serialized css (awaiting first render)
+const precomputed = new Map() // componentId -> compiled rules array (awaiting first render)
 const pendingStatic = [] // { componentId, parts } awaiting idle precompile
 let idleArmed = false
 
@@ -235,11 +260,7 @@ function classFor(descriptor, cssBody) {
   if (cached !== undefined) return cached
   const cls = 'js-' + hash(descriptor.componentId + cssBody)
   descriptor._cache.set(cssBody, cls)
-  sheet.registerRule(
-    descriptor.group,
-    cls,
-    serialize(compile('.' + cls + '{' + cssBody + '}'), middleware([prefixer, stringify]))
-  )
+  sheet.registerRule(descriptor.group, cls, compileRules('.' + cls + '{' + cssBody + '}'))
   return cls
 }
 
@@ -257,5 +278,6 @@ module.exports = {
   queueStatic,
   nextGroup,
   hash,
+  setVendorPrefixes,
   __reset,
 }

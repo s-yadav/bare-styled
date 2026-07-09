@@ -22,3 +22,8 @@ export const useNamespace = state => {
 
 export const useRuntimeImportPath = state =>
   getOption(state, 'runtimeImportPath', 'just-styled/runtime')
+
+// Vendor prefixing of build-time precompiled rules. OFF by default, matching
+// styled-components v6 and the runtime's default; if enabled here, the app must
+// also call setVendorPrefixes(true) on the runtime so both halves agree.
+export const useVendorPrefixes = state => getOption(state, 'vendorPrefixes', false)

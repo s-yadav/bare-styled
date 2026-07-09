@@ -122,6 +122,27 @@ describe('js-transform (decoupled createStyled emit)', () => {
     expect(imports.length).toBe(1)
   })
 
+  it('does not vendor-prefix by default; vendorPrefixes: true opts in (SC v6 parity)', () => {
+    const src = `import styled from 'styled-components'\nconst A = styled.div\`display: flex; user-select: none;\``
+    const plain = run(src)
+    expect(plain).toMatch(/css:\s*"\.sc-[a-z0-9]+-0\{display:flex;user-select:none;\}"/)
+    expect(plain).not.toContain('-webkit-')
+    const prefixed = run(src, { vendorPrefixes: true })
+    expect(prefixed).toContain('-webkit-')
+  })
+
+  it('bails (stays live) when a quasi has an invalid JS escape (cooked === undefined)', () => {
+    // \\2022 in this source -> \2022 in the transformed code: an invalid JS
+    // escape, so the quasi's cooked value is undefined. Precompiling would
+    // silently drop that chunk of CSS — the template must stay live instead.
+    const out = run(`
+      import styled from 'styled-components'
+      const A = styled.span\`content: '\\2022'; color: red;\`
+    `)
+    expect(out).not.toMatch(/\bcss:/)
+    expect(out).toContain('createStyled') // still rewritten, just not precompiled
+  })
+
   it('omits displayName when the option is off', () => {
     const out = run(
       `import styled from 'styled-components'\nconst A = styled.div\`color: red;\``,

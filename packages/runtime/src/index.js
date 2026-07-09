@@ -20,8 +20,10 @@ const IS_STYLED = Symbol.for('just-styled')
 //
 // styled(StyledComponent) is NOT folded: base and extender keep their own rules
 // (so each component's styles stay traceable to it in DevTools, like
-// styled-components). The extender wins the cascade because resolveDescriptor
-// registers the base's rule before the extender's — see registerBaseFirst.
+// styled-components). The extender wins the cascade through the sheet's group
+// ordering — groups are assigned in definition order (engine.nextGroup below),
+// and a base is always defined before its extender, so base rules precede
+// extender rules in the sheet regardless of render order.
 function createStyled(component, config) {
   const componentId = config.componentId
   const displayName = config.displayName
@@ -71,6 +73,10 @@ module.exports = {
   Fragment: React.Fragment,
   getCss: sheet.getCss,
   renderStaticStyles: sheet.renderStaticStyles,
+  // Vendor prefixing is opt-in (styled-components v6 parity). Call once at
+  // startup; pair with the babel plugin's `vendorPrefixes: true` so build-time
+  // precompiled rules match.
+  setVendorPrefixes: engine.setVendorPrefixes,
   __resetSheet: function () {
     sheet.__resetSheet()
     engine.__reset()

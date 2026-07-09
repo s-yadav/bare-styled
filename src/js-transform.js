@@ -20,7 +20,7 @@ import { isStyled } from './utils/detectors'
 import getName from './utils/getName'
 import prefixLeadingDigit from './utils/prefixDigit'
 import { getFileHash } from './utils/fileHash'
-import { useDisplayName, useRuntimeImportPath, useMeaninglessFileNames, useNamespace } from './utils/options'
+import { useDisplayName, useRuntimeImportPath, useMeaninglessFileNames, useNamespace, useVendorPrefixes } from './utils/options'
 
 const CREATE_IMPORT_NAME = 'just-styled-create-name'
 const PATCH_IMPORT_ADDED = 'just-styled-patch-added'
@@ -124,6 +124,13 @@ const tryStaticRaw = (t, path) => {
   const quasi = path.node.quasi
   const quasis = quasi.quasis
   const exprs = quasi.expressions
+  // A quasi containing an invalid JS escape (e.g. content:'\2022' — CSS escapes
+  // need a doubled backslash in a template) has a nullish `cooked` (babel uses
+  // null, ESTree undefined). Bail to the live template rather than silently
+  // dropping that chunk of CSS.
+  for (let i = 0; i < quasis.length; i++) {
+    if (quasis[i].value.cooked == null) return null
+  }
   let raw = (quasis[0] && quasis[0].value.cooked) || ''
   if (exprs.length === 0) return raw
   const exprPaths = path.get('quasi.expressions')
@@ -197,13 +204,14 @@ export default function ({ types: t }) {
         // finished rule emitted as `css` (registered under the componentId at
         // runtime — no runtime css()/stylis), dropping the live template body.
         // Works for any base (native tag or styled(Ident)); a styled(Ident)
-        // extender's own rule is independent of its base, and the base chain is
-        // ordered at render time (see registerBaseFirst), so no folding is needed.
+        // extender's own rule is independent of its base, and the sheet's group
+        // ordering (definition order) puts base rules before extender rules, so
+        // no folding is needed. Vendor prefixing is opt-in (SC v6 parity).
         const raw = tryStaticRaw(t, path)
         if (raw != null) {
           const compiled = serialize(
             compile('.' + componentId + '{' + raw + '}'),
-            middleware([prefixer, stringify])
+            middleware(useVendorPrefixes(state) ? [prefixer, stringify] : [stringify])
           )
           configProps.push(t.objectProperty(t.identifier('css'), t.stringLiteral(compiled)))
           path.node.quasi = t.templateLiteral([t.templateElement({ raw: '', cooked: '' })], [])
