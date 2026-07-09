@@ -38,20 +38,40 @@ describe('js-transform (decoupled createStyled emit)', () => {
       import styled from 'styled-components'
       const A = styled.div\`color: red; padding: 8px;\`
     `)
-    // finished stylis output emitted as css, keyed to the componentId; the
-    // template body is dropped (no runtime stylis for pure-static rules).
+    // finished stylis output emitted as css, keyed to the componentId; the live
+    // template body is dropped (no runtime stylis for fully-static rules).
     expect(out).toMatch(/css:\s*"\.sc-[a-z0-9]+-0\{color:red;padding:8px;\}"/)
-    expect(out).not.toMatch(/color: red; padding: 8px;/) // raw template gone
+    expect(out).not.toMatch(/`[^`]*color: red/) // no live backtick template left
   })
 
-  it('does NOT pre-compile when the template has interpolations', () => {
+  it('pre-compiles static-after-flatten templates (module const members) at build time', () => {
     const out = run(`
       import styled from 'styled-components'
-      const t = { c: 'red' }
-      const A = styled.div\`color: \${t.c};\`
+      const theme = { border: '#e5e7eb', space: { sm: 8 } }
+      const RADIUS = '8px'
+      const A = styled.div\`border: 1px solid \${theme.border}; padding: \${theme.space.sm}px; border-radius: \${RADIUS};\`
+    `)
+    // module constants resolved and baked into the serialized rule at build time
+    expect(out).toMatch(/css:\s*"[^"]*border:1px solid #e5e7eb[^"]*padding:8px[^"]*border-radius:8px[^"]*"/)
+    expect(out).not.toContain('theme.border') // interpolation resolved away
+  })
+
+  it('does NOT pre-compile when an interpolation is prop-dependent', () => {
+    const out = run(`
+      import styled from 'styled-components'
+      const A = styled.div\`color: \${p => p.c};\`
     `)
     expect(out).not.toMatch(/\bcss:/) // left to runtime resolution
-    expect(out).toContain('t.c')
+    expect(out).toContain('p => p.c')
+  })
+
+  it('pre-compiles a fully-static styled(Component) too (rule ordered at runtime, not folded)', () => {
+    const out = run(`
+      import styled from 'styled-components'
+      const B = styled(Base)\`color: red;\`
+    `)
+    expect(out).toMatch(/createStyled\)?\(Base,/) // still targets the base component
+    expect(out).toMatch(/css:\s*"\.sc-[a-z0-9]+-0\{color:red;\}"/) // extender's own rule precompiled
   })
 
   it('rewrites styled("tag") and styled(Component)', () => {

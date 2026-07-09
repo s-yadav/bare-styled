@@ -241,7 +241,7 @@ test(`dashboard mount/re-render: styled-components vs just-styled (${ROWS} rows)
     `\n  styled-comp   ${sc.mount.toFixed(2).padStart(6)}     ${sc.update.toFixed(2).padStart(6)}` +
     `\n  just-styled   ${js.mount.toFixed(2).padStart(6)}     ${js.update.toFixed(2).padStart(6)}` +
     `\n  delta         ${pct(sc.mount, js.mount).padStart(6)}     ${pct(sc.update, js.update).padStart(6)}  (positive = just-styled faster)` +
-    `\n  just-styled generated ${js.ruleCount} dynamic (js-) classes for ${sc.nodeCount} nodes — global cache dedup\n`
+    `\n  just-styled generated ${js.ruleCount} dynamic (js-) classes for ${sc.nodeCount} nodes — per-component dedup\n`
   )
 
   expect(sc.mount).toBeGreaterThan(0)

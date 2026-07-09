@@ -17,18 +17,24 @@ describe('engine (render-time hash-class resolution)', () => {
     expect(engine.resolveParts(parts, { color: 'blue' })).toMatch(/color:\s*blue/)
   })
 
-  it('classFor: same resolved css -> same class (registered once); different -> different', () => {
-    const a = engine.classFor('color:red;')
-    const a2 = engine.classFor('color:red;')
-    const b = engine.classFor('color:blue;')
-    expect(a).toBe(a2)
+  it('classFor: per-component cache — same css same class within a component, once', () => {
+    const d = { componentId: 'sc-x', group: 0 }
+    const a = engine.classFor(d, 'color:red;')
+    const a2 = engine.classFor(d, 'color:red;')
+    const b = engine.classFor(d, 'color:blue;')
+    expect(a).toBe(a2) // same css, same component -> same class, cached
     expect(a).not.toBe(b)
     expect(a).toMatch(/^js-[a-z0-9]+$/)
-    // global dedup: same resolved css from any component yields the same class
-    // (hashed from css alone) and is hashed + registered exactly once.
-    expect(engine.classFor('color:red;')).toBe(a)
     expect((getCss().match(new RegExp('\\.' + a + '\\{', 'g')) || []).length).toBe(1)
     expect(getCss()).toContain('.' + b + '{color:blue;}')
+  })
+
+  it('classFor: per-component hashing — different components, same css -> DIFFERENT classes', () => {
+    // (No cross-component dedup: each rule belongs to one component/group so the
+    // sheet can order it. Matches styled-components.)
+    const x = { componentId: 'sc-x', group: 0 }
+    const y = { componentId: 'sc-y', group: 1 }
+    expect(engine.classFor(x, 'color:red;')).not.toBe(engine.classFor(y, 'color:red;'))
   })
 })
 

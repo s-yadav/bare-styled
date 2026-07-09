@@ -17,10 +17,15 @@ const IS_STYLED = Symbol.for('just-styled')
 // flattens the static half once here, and the engine resolves the rest per
 // render into a hash-class (styled-components' model) — but the descriptor is
 // resolved to a host element by the JSX runtime, so there is no wrapper fiber.
+//
+// styled(StyledComponent) is NOT folded: base and extender keep their own rules
+// (so each component's styles stay traceable to it in DevTools, like
+// styled-components). The extender wins the cascade because resolveDescriptor
+// registers the base's rule before the extender's — see registerBaseFirst.
 function createStyled(component, config) {
   const componentId = config.componentId
   const displayName = config.displayName
-  const precompiled = config.css // Opt 2: build-time compiled rule for a zero-interpolation template
+  const precompiled = config.css // build-time stylis-serialized rule for a fully-static template
   return function (strings) {
     const interps = Array.prototype.slice.call(arguments, 1)
     // A precompiled rule is static by definition; otherwise flatten the static
@@ -28,9 +33,9 @@ function createStyled(component, config) {
     const parts = precompiled != null ? null : engine.cacheParts(strings, interps)
     const isStatic = precompiled != null || engine.isStatic(parts)
 
-    // A static component that isn't already build-time precompiled (Opt 2) has a
-    // stylis compile to do on first render — queue it for idle precompilation so
-    // that work happens off the render critical path (see engine.queueStatic).
+    // A non-precompiled static component still has a stylis compile to do on first
+    // render — queue it for idle precompilation so that work happens off the
+    // render critical path (see engine.queueStatic).
     if (isStatic && precompiled == null) engine.queueStatic(componentId, parts)
 
     // forwardRef so the descriptor is a valid element type and still renders
@@ -44,6 +49,7 @@ function createStyled(component, config) {
     element.component = component
     element.componentId = componentId
     element.styledComponentId = componentId // component-selector target
+    element.group = engine.nextGroup() // definition order -> sheet cascade order
     element.parts = parts
     element.css = precompiled
     element.isStatic = isStatic

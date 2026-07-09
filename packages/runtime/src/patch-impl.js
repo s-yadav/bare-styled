@@ -57,6 +57,10 @@ function buildHostProps(props, className) {
 
 // Resolve a descriptor + props into { type, props } for the real element.
 // Exported so createStyled's forwardRef body can render even without the patch.
+//
+// Cascade ordering (styled(StyledComponent), same element, etc.) is handled by
+// the sheet's group ordering — each component's rule lands in its definition-order
+// group, so a base always precedes its extender. Nothing to reorder here.
 function resolveDescriptor(type, props) {
   const p = props || EMPTY
   let styleClass = ''
@@ -65,12 +69,12 @@ function resolveDescriptor(type, props) {
     // as the style class. No per-render resolve or hash. registerStatic dedups
     // internally against the sheet's lifetime (Set keyed by componentId), so it
     // correctly re-registers after a __resetSheet and costs one Set lookup here.
-    engine.registerStatic(type.componentId, type.parts, type.css)
+    engine.registerStatic(type.componentId, type.group, type.parts, type.css)
   } else {
     // Prop-dependent: componentId is a marker (for `${Comp}` selectors); the
-    // hash class carries the resolved styles. classFor caches globally by the
-    // resolved css, so identical styles hash + inject once across all components.
-    styleClass = ' ' + engine.classFor(engine.resolveParts(type.parts, p))
+    // hash class carries the resolved styles, hashed per component and injected
+    // into this component's group.
+    styleClass = ' ' + engine.classFor(type, engine.resolveParts(type.parts, p))
   }
   const className = type.componentId + styleClass + (p.className ? ' ' + p.className : '')
   const target = p.as || type.component

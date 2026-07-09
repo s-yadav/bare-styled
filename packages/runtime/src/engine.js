@@ -190,11 +190,11 @@ function queueStatic(componentId, parts) {
 // any __resetSheet, so a per-descriptor "already done" boolean would stay true
 // after the sheet was cleared and permanently suppress re-registration, leaving
 // the static/compile-time CSS missing from the DOM. Keying the guard to the
-// sheet's own lifetime keeps the two in sync. The rule string is taken from the
-// plugin's precompiled css (Opt 2), the idle precompute cache, or compiled inline
-// here — whichever is available first — and only ever computed once.
+// sheet's own lifetime keeps the two in sync. The serialized rule is taken from
+// the plugin's build-time precompiled css when present, else the idle precompute
+// cache, else compiled inline here — and only ever computed once.
 const staticRegistered = new Set()
-function registerStatic(componentId, parts, precompiled) {
+function registerStatic(componentId, group, parts, precompiled) {
   if (staticRegistered.has(componentId)) return
   staticRegistered.add(componentId)
   let css
@@ -205,26 +205,38 @@ function registerStatic(componentId, parts, precompiled) {
     if (css === undefined) css = serializeStatic(componentId, parts)
     else precomputed.delete(componentId) // now in the sheet; free the interim copy
   }
-  sheet.registerRule(componentId, css)
+  sheet.registerRule(group, componentId, css)
 }
 
-// Generated class for a resolved CSS body, keyed by the resolved string in a
-// single GLOBAL cache. A repeated/unchanged style — whether the same component
-// re-rendering or a *different* component resolving to identical styles — is one
-// Map lookup with no key allocation; the MurmurHash + stylis compile + injection
-// run only the first time a given resolved style is seen anywhere. Global (not
-// per-descriptor) because styled components are module-level and never GC'd, so
-// per-descriptor caches free nothing and would re-hash the same css per
-// component. The class is hashed from the css alone (componentId is carried
-// separately as a marker class for `${Comp}` selectors — see resolveDescriptor),
-// so identical styles across components share one class and one rule.
-const classCache = new Map()
-function classFor(cssBody) {
-  const cached = classCache.get(cssBody)
+// Definition-order group counter. Each styled component takes the next group at
+// definition time (module load), so a component that extends another always has
+// a higher group than its base — which is what makes the sheet's group ordering
+// put base rules before extender rules. (Mirrors styled-components.)
+let groupCounter = 0
+function nextGroup() {
+  return groupCounter++
+}
+
+// Generated class for a resolved CSS body, hashed PER COMPONENT (componentId +
+// css) and cached on the descriptor. Per-component (not global) so a rule belongs
+// to exactly one component/group — a shared global class couldn't sit in two
+// groups at once, which is what broke cross-component cascade ordering. Two
+// components with identical css get distinct classes/rules (each in its own
+// group), matching styled-components; within a component, its instances/renders
+// still dedup via the descriptor's own cache. The descriptor's cache is lazily
+// cleared after a sheet reset via the generation counter.
+let generation = 0
+function classFor(descriptor, cssBody) {
+  if (descriptor._gen !== generation) {
+    descriptor._cache = new Map()
+    descriptor._gen = generation
+  }
+  const cached = descriptor._cache.get(cssBody)
   if (cached !== undefined) return cached
-  const cls = 'js-' + hash(cssBody)
-  classCache.set(cssBody, cls)
+  const cls = 'js-' + hash(descriptor.componentId + cssBody)
+  descriptor._cache.set(cssBody, cls)
   sheet.registerRule(
+    descriptor.group,
     cls,
     serialize(compile('.' + cls + '{' + cssBody + '}'), middleware([prefixer, stringify]))
   )
@@ -232,8 +244,18 @@ function classFor(cssBody) {
 }
 
 function __reset() {
-  classCache.clear()
+  generation++ // descriptor caches are lazily rebuilt on next use
   staticRegistered.clear()
 }
 
-module.exports = { cacheParts, resolveParts, classFor, isStatic, registerStatic, queueStatic, hash, __reset }
+module.exports = {
+  cacheParts,
+  resolveParts,
+  classFor,
+  isStatic,
+  registerStatic,
+  queueStatic,
+  nextGroup,
+  hash,
+  __reset,
+}

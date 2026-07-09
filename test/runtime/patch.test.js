@@ -54,13 +54,13 @@ describe('descriptor resolution (hash-class, no wrapper fiber)', () => {
   it('re-registers a build-time precompiled (Opt 2) rule after __resetSheet', () => {
     const Box = createStyled('div', {
       componentId: 'sc-pre',
-      css: '.sc-pre{display:flex;}', // plugin-precompiled, zero-interpolation
+      css: '.sc-pre{color:teal;}', // plugin build-time serialized rule
     })``
     render(React.createElement(Box, null, 'a'))
-    expect(getCss()).toContain('.sc-pre{display:flex;}')
+    expect(getCss()).toContain('.sc-pre{color:teal;}')
     __resetSheet()
     render(React.createElement(Box, null, 'b'))
-    expect(getCss()).toContain('.sc-pre{display:flex;}')
+    expect(getCss()).toContain('.sc-pre{color:teal;}')
   })
 
   it('distinct resolved styles get distinct classes; identical ones share', () => {

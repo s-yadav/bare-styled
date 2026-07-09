@@ -1,11 +1,21 @@
 // Singleton style sheet shared by every descriptor in the app.
-// In the browser rules are appended to a single <style data-just-styled>
-// element; without a DOM they are collected in memory for SSR.
-// CommonJS on purpose: this package ships source, and consumers (jest,
-// bundlers, node) all load it without a transform step.
+//
+// Rules are ordered by GROUP — a per-component number assigned in definition
+// (module-load) order — mirroring styled-components. A rule is inserted at the
+// end of its group's span, so every rule of a lower group precedes every rule of
+// a higher group in the sheet, regardless of the order components first render.
+// Because a base component is always defined before a component that extends it,
+// base rules always precede extender rules, so the extender wins the cascade on
+// equal specificity — without folding and without any render-time reordering.
+//
+// In the browser rules go into a single <style data-just-styled> via the CSSOM
+// insertRule API (positional). Without a DOM they are collected in memory for
+// SSR/getCss, still in group order.
 'use strict'
 
-const rules = new Map()
+const registered = new Set() // className -> inserted once (dedup)
+const groupRules = [] // groupRules[g] = [css, ...] in insertion order (memory / SSR / getCss)
+const groupSizes = [] // groupSizes[g] = # of CSSOM rules inserted for group g (browser index math)
 
 let styleElement = null
 let cssomSheet = null
@@ -19,9 +29,9 @@ function getStyleElement() {
   return styleElement
 }
 
-// Split a compiled css string into individual top-level rules (CSSOM
-// `insertRule` takes one rule at a time). Splits at brace depth 0, so
-// `@media{...}` blocks stay intact as a single rule.
+// Split a compiled css string into individual top-level rules (CSSOM insertRule
+// takes one rule at a time). Splits at brace depth 0, so @media{...} blocks stay
+// intact as a single rule.
 function splitRules(css) {
   const out = []
   let depth = 0
@@ -41,24 +51,33 @@ function splitRules(css) {
   return out
 }
 
-// Registers a compiled rule, deduped by className. In the browser we use the
-// CSSOM `insertRule` API (incremental, no stylesheet re-parse) instead of
-// appending text nodes — appending thousands of text nodes forces repeated
-// re-parses of the growing sheet and stalls the main thread. Memory `rules`
-// is still kept as the source of truth for getCss()/SSR.
-function registerRule(className, css) {
-  if (rules.has(className)) return
-  rules.set(className, css)
+// Index of the first CSSOM rule of group g (sum of all lower groups' sizes).
+function groupStart(g) {
+  let n = 0
+  for (let i = 0; i < g; i++) n += groupSizes[i] || 0
+  return n
+}
+
+// Register a compiled rule for `group`, deduped by className. New rules are
+// inserted at the END of their group's span, keeping the sheet ordered by group.
+function registerRule(group, className, css) {
+  if (registered.has(className)) return
+  registered.add(className)
+  ;(groupRules[group] || (groupRules[group] = [])).push(css)
+
   if (typeof document === 'undefined') return
   const el = getStyleElement()
   const sheet = cssomSheet || el.sheet
+  const parts = splitRules(css)
   if (sheet && typeof sheet.insertRule === 'function') {
-    const parts = splitRules(css)
+    let idx = groupStart(group) + (groupSizes[group] || 0) // end of this group's span
     for (let i = 0; i < parts.length; i++) {
       try {
-        sheet.insertRule(parts[i], sheet.cssRules.length)
+        sheet.insertRule(parts[i], idx)
+        idx++
+        groupSizes[group] = (groupSizes[group] || 0) + 1
       } catch (e) {
-        // Fall back to text for anything the CSSOM rejects.
+        // Anything the CSSOM rejects: drop to a text node (order best-effort).
         el.appendChild(document.createTextNode(parts[i]))
       }
     }
@@ -67,12 +86,13 @@ function registerRule(className, css) {
   }
 }
 
-// All registered css concatenated in registration order.
+// All registered css concatenated in group order (source of truth for SSR).
 function getCss() {
   let css = ''
-  rules.forEach(rule => {
-    css += rule
-  })
+  for (let g = 0; g < groupRules.length; g++) {
+    const arr = groupRules[g]
+    if (arr) for (let i = 0; i < arr.length; i++) css += arr[i]
+  }
   return css
 }
 
@@ -83,7 +103,9 @@ function renderStaticStyles() {
 
 // Test-only helper. Clears collected rules and removes the injected tag.
 function __resetSheet() {
-  rules.clear()
+  registered.clear()
+  groupRules.length = 0
+  groupSizes.length = 0
   if (styleElement && styleElement.parentNode) {
     styleElement.parentNode.removeChild(styleElement)
   }
