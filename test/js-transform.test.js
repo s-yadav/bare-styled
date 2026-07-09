@@ -122,6 +122,37 @@ describe('js-transform (decoupled createStyled emit)', () => {
     expect(imports.length).toBe(1)
   })
 
+  it('pre-compiles same-file ${Component} selectors at build time', () => {
+    const out = run(`
+      import styled from 'styled-components'
+      const Badge = styled.span\`color: red;\`
+      const Card = styled.div\`padding: 4px; \${Badge} { font-weight: 600; }\`
+    `)
+    // Badge's own rule + Card's rule with the nested selector resolved to
+    // Badge's componentId — both fully compiled at build.
+    expect(out).toMatch(/css:\s*"\.sc-[a-z0-9]+-0\{color:red;\}"/)
+    expect(out).toMatch(/css:\s*"\.sc-[a-z0-9]+-1\{padding:4px;\}\.sc-[a-z0-9]+-1 \.sc-[a-z0-9]+-0\{font-weight:600;\}"/)
+  })
+
+  it('inlines same-file fully-static css`` fragments at build time', () => {
+    const out = run(`
+      import styled, { css } from 'styled-components'
+      const pad = css\`padding: 8px 12px;\`
+      const Box = styled.div\`\${pad} color: red;\`
+    `)
+    expect(out).toMatch(/css:\s*"\.sc-[a-z0-9]+-0\{padding:8px 12px;color:red;\}"/)
+  })
+
+  it('leaves templates live when a fragment is dynamic or unknown', () => {
+    const out = run(`
+      import styled, { css } from 'styled-components'
+      const dyn = css\`color: \${p => p.c};\`
+      const A = styled.div\`\${dyn} padding: 4px;\`
+      const B = styled.div\`\${importedFragment} padding: 4px;\`
+    `)
+    expect(out).not.toMatch(/\bcss:/)
+  })
+
   it('does not vendor-prefix by default; vendorPrefixes: true opts in (SC v6 parity)', () => {
     const src = `import styled from 'styled-components'\nconst A = styled.div\`display: flex; user-select: none;\``
     const plain = run(src)

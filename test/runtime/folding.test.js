@@ -58,7 +58,9 @@ it('dynamic base + static extender: base hash rule before extender rule', () => 
   expect(el.className).toContain('sc-dyn')
   const jsCls = el.className.split(' ').find(c => c.startsWith('js-'))
   const css = getCss()
-  expect(css.match(new RegExp('\\.' + jsCls + '\\{([^}]*)\\}'))[1]).toContain('background:red')
+  // whitespace-tolerant: flat dynamic bodies skip stylis, so the resolved
+  // body's original spacing is preserved in the rule
+  expect(css.match(new RegExp('\\.' + jsCls + '\\{([^}]*)\\}'))[1]).toMatch(/background:\s*red/)
   expect(css).toContain('.sc-pad{padding:4px;}')
   // base's (dynamic) rule inserted before the extender's rule
   expect(css.indexOf('.' + jsCls + '{')).toBeLessThan(css.indexOf('.sc-pad{'))

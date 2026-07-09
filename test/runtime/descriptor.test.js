@@ -29,6 +29,15 @@ describe('engine (render-time hash-class resolution)', () => {
     expect(getCss()).toContain('.' + b + '{color:blue;}')
   })
 
+  it('flat dynamic bodies skip stylis but produce the same rule', () => {
+    const d = { componentId: 'sc-flat', group: 0 }
+    engine.classFor(d, 'color:tomato;padding:4px;') // flat -> fast path
+    const d2 = { componentId: 'sc-nest', group: 0 }
+    engine.classFor(d2, 'color:red;&:hover{color:blue;}') // nested -> stylis
+    expect(getCss()).toContain('{color:tomato;padding:4px;}')
+    expect(getCss()).toContain(':hover{color:blue;}')
+  })
+
   it('does not vendor-prefix by default; setVendorPrefixes(true) opts in', () => {
     const d = { componentId: 'sc-vp', group: 0 }
     engine.classFor(d, 'display:flex;')

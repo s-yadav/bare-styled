@@ -83,8 +83,12 @@ const IdCell = styled.td`padding:6px 12px; border-top:1px solid #e5e7eb; color:#
 const PillStatic = styled.span`padding:2px 8px; border-radius:10px; font-size:12px; color:#fff; background:#64748b;`
 // const-member interpolations -> static-after-flatten AT BUILD (resolveMember precompile)
 const NameCell = styled.td`padding:6px 12px; border-top:1px solid ${theme.border}; color:${theme.fg};`
-// css`` fragment survives the plugin -> static-after-flatten AT RUNTIME (idle precompile)
-const mono = css`font-variant-numeric:tabular-nums; text-align:right;`
+// css`` fragment kept OPAQUE to the build resolver (Math.random can't be
+// evaluated at build) so this stays a live template -> css() flattens it to
+// strings at definition -> static-after-flatten AT RUNTIME (idle precompile).
+// (A fully-static fragment would now be inlined and precompiled at build.)
+const alignEnd = Math.random() < 2 ? 'right' : 'left' // always 'right'
+const mono = css`font-variant-numeric:tabular-nums; text-align:${alignEnd};`
 const ScoreCell = styled.td`padding:6px 12px; border-top:1px solid ${theme.border}; color:${theme.muted}; ${mono}`
 // static styled(StyledComponent) -> build-precompiled extender over a runtime-static base
 const TotalCell = styled(ScoreCell)`font-weight:600; color:#111827;`

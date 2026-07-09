@@ -78,7 +78,25 @@ function App() {
         const out = []
         if (which === 'styled-components' || which === 'both') out.push(['styled-components', bench(SCApp, rows, iters, tintMode, mode, false)])
         if (which === 'just-styled' || which === 'both') { __resetSheet(); out.push(['just-styled', bench(JSApp, rows, iters, tintMode, mode, true)]) }
-        setRowsData(prev => [...prev, ...out.map(([name, r]) => ({ name, rows, tintMode, mode, ...r }))])
+        setRowsData(prev => {
+          const added = out.map(([name, r]) => ({ name, rows, tintMode, mode, ...r }))
+          // Attach % improvement (positive = just-styled faster) to NEW
+          // just-styled rows only, computed ONCE at insertion: pair with the
+          // styled-components run from this same batch ("Run both"), else the
+          // latest earlier run with the same config. Existing rows are frozen —
+          // later runs never rewrite a delta already shown.
+          for (const row of added) {
+            if (row.name !== 'just-styled') continue
+            const sc =
+              added.find(o => o.name === 'styled-components') ||
+              [...prev].reverse().find(o =>
+                o.name === 'styled-components' && o.rows === row.rows &&
+                o.tintMode === row.tintMode && o.mode === row.mode)
+            row.dMount = sc ? ((sc.mount - row.mount) / sc.mount * 100).toFixed(0) + '%' : null
+            row.dUpdate = sc ? ((sc.update - row.update) / sc.update * 100).toFixed(0) + '%' : null
+          }
+          return [...prev, ...added]
+        })
         setStatus('Done: ' + which + (out[0] ? ' — ' + out[0][1].nodeCount + ' DOM nodes/tree' : ''))
       } catch (e) {
         setStatus('Error: ' + (e && e.message || e)); console.error(e)
@@ -130,16 +148,19 @@ function App() {
     React.createElement('div', { style: { fontWeight: 600, minHeight: '1.4em' } }, status),
     React.createElement('table', { style: { borderCollapse: 'collapse', marginTop: 12, fontVariantNumeric: 'tabular-nums' } },
       React.createElement('tbody', null,
-        React.createElement('tr', null, ['model', 'cells', 'tint', 'rows', 'DOM nodes', 'js- classes', 'rules', 'mount ms (median)', 're-render ms (median)'].map((h, i) =>
+        React.createElement('tr', null, ['model', 'cells', 'tint', 'rows', 'DOM nodes', 'js- classes', 'rules', 'mount ms (median)', 're-render ms (median)', 'Δ mount', 'Δ re-render'].map((h, i) =>
           React.createElement('th', { key: i, style: { border: '1px solid #ccc', padding: '4px 10px', textAlign: i < 4 ? 'left' : 'right' } }, h))),
         rowsData.map((r, i) =>
-          React.createElement('tr', { key: i }, [r.name, r.mode, r.tintMode, r.rows, r.nodeCount, r.ruleCount == null ? '—' : r.ruleCount, r.totalRules == null ? '—' : r.totalRules, r.mount.toFixed(2), r.update.toFixed(2)].map((v, j) =>
-            React.createElement('td', { key: j, style: { border: '1px solid #ccc', padding: '4px 10px', textAlign: j < 4 ? 'left' : 'right' } }, v))))),
+          React.createElement('tr', { key: i }, [r.name, r.mode, r.tintMode, r.rows, r.nodeCount, r.ruleCount == null ? '—' : r.ruleCount, r.totalRules == null ? '—' : r.totalRules, r.mount.toFixed(2), r.update.toFixed(2), r.dMount || '—', r.dUpdate || '—'].map((v, j) =>
+            React.createElement('td', { key: j, style: { border: '1px solid #ccc', padding: '4px 10px', textAlign: j < 4 ? 'left' : 'right', fontWeight: j >= 9 && v !== '—' ? 600 : 400 } }, v)))),
+        rowsData.some(r => r.dMount) ? React.createElement('tr', { key: 'note' },
+          React.createElement('td', { colSpan: 11, style: { border: 'none', padding: '6px 10px', color: '#666', fontSize: 12 } },
+            'Δ = just-styled improvement vs the latest styled-components run with the same config (positive = just-styled faster).')) : null)),
     React.createElement('div', { style: { marginTop: 20 } },
       React.createElement('b', null, 'Inspect (leaves DOM mounted): '),
       React.createElement('button', { onClick: inspect('styled-components'), disabled: busy, style: { font: 'inherit', padding: '4px 10px', marginRight: 8 } }, 'styled-components'),
       React.createElement('button', { onClick: inspect('just-styled'), disabled: busy, style: { font: 'inherit', padding: '4px 10px' } }, 'just-styled')),
-    React.createElement('div', { ref: inspectRef, style: { marginTop: 10, border: '1px solid #eee', height: 420, overflow: 'auto' } })))
+    React.createElement('div', { ref: inspectRef, style: { marginTop: 10, border: '1px solid #eee', height: 420, overflow: 'auto' } }))
 }
 
 createRoot(document.getElementById('root')).render(React.createElement(App))

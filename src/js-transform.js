@@ -16,7 +16,7 @@ import syntax from '@babel/plugin-syntax-jsx'
 import path from 'path'
 import { addNamed, addSideEffect } from '@babel/helper-module-imports'
 import { compile, serialize, stringify, middleware, prefixer } from 'stylis'
-import { isStyled } from './utils/detectors'
+import { isStyled, isCSSHelper } from './utils/detectors'
 import getName from './utils/getName'
 import prefixLeadingDigit from './utils/prefixDigit'
 import { getFileHash } from './utils/fileHash'
@@ -25,6 +25,10 @@ import { useDisplayName, useRuntimeImportPath, useMeaninglessFileNames, useNames
 const CREATE_IMPORT_NAME = 'just-styled-create-name'
 const PATCH_IMPORT_ADDED = 'just-styled-patch-added'
 const POSITION = 'just-styled-position'
+const STYLED_IDS = 'just-styled-component-ids' // VariableDeclarator node -> componentId
+
+// Guard against pathological fragment-in-fragment nesting while resolving.
+const MAX_STATIC_DEPTH = 8
 
 // Reject anything that isn't exactly `styled.tag`, `styled('tag')`, or
 // `styled(Ident)`. Returns the component node (a string literal for native
@@ -106,21 +110,47 @@ const resolveMember = (t, exprPath) => {
 
 // Statically resolve one interpolation. Babel's evaluate() covers literals, const
 // identifiers, string concat and conditionals of consts; resolveMember covers
-// member access into const objects. Anything else (prop functions, css``
-// fragments, ${Component} selectors, cross-module imports) stays unresolved.
-const staticValue = (t, exprPath) => {
+// member access into const objects; same-file `${Component}` selectors resolve to
+// the componentId marker the plugin just minted (matching the runtime's
+// descriptor toString), and same-file fully-static css`` fragments inline to
+// their raw text (matching the runtime's flatten-then-join). Anything else
+// (prop functions, dynamic fragments, cross-module imports) stays unresolved.
+const staticValue = (t, exprPath, state, depth) => {
   const ev = exprPath.evaluate()
   if (ev.confident) return { confident: true, value: ev.value }
   if (t.isMemberExpression(exprPath.node)) return resolveMember(t, exprPath)
+  if (t.isIdentifier(exprPath.node) && depth < MAX_STATIC_DEPTH) {
+    const binding = exprPath.scope.getBinding(exprPath.node.name)
+    if (binding && binding.constant && binding.path.isVariableDeclarator()) {
+      // ${Component}: a styled component this plugin already transformed in
+      // this file -> `.componentId` selector, exactly what the runtime's css()
+      // flatten produces from the descriptor's toString.
+      const ids = state.file.get(STYLED_IDS)
+      const componentId = ids && ids.get(binding.path.node)
+      if (componentId) return { confident: true, value: '.' + componentId }
+      // ${fragment}: a same-file css`` fragment whose own template is fully
+      // static -> inline its raw text (the runtime flattens it to strings and
+      // joins them). Dynamic fragments bail and stay live.
+      const init = binding.path.node.init
+      if (
+        t.isTaggedTemplateExpression(init) &&
+        isCSSHelper(t)(init.tag, state)
+      ) {
+        const raw = staticRawOfTemplate(t, binding.path.get('init'), state, depth + 1)
+        if (raw != null) return { confident: true, value: raw }
+      }
+    }
+  }
   return { confident: false }
 }
 
-// The raw CSS body of a template if it is fully static after resolving module
-// constants — i.e. every interpolation resolves to a string/number (or a falsy
-// value we drop, matching the runtime). Returns null if anything is dynamic, so
-// the template is left live for the runtime to resolve. Zero-interpolation
-// templates are the trivial case (no expressions to resolve).
-const tryStaticRaw = (t, path) => {
+// The raw CSS body of a tagged-template path if it is fully static after
+// resolving module constants — i.e. every interpolation resolves to a
+// string/number (or a falsy value we drop, matching the runtime). Returns null
+// if anything is dynamic, so the template is left live for the runtime to
+// resolve. Zero-interpolation templates are the trivial case. Also used
+// recursively (via staticValue) to inline same-file css`` fragments.
+const staticRawOfTemplate = (t, path, state, depth) => {
   const quasi = path.node.quasi
   const quasis = quasi.quasis
   const exprs = quasi.expressions
@@ -135,7 +165,7 @@ const tryStaticRaw = (t, path) => {
   if (exprs.length === 0) return raw
   const exprPaths = path.get('quasi.expressions')
   for (let i = 0; i < exprs.length; i++) {
-    const r = staticValue(t, exprPaths[i])
+    const r = staticValue(t, exprPaths[i], state, depth)
     if (!r.confident) return null
     const v = r.value
     let piece
@@ -147,6 +177,8 @@ const tryStaticRaw = (t, path) => {
   }
   return raw
 }
+
+const tryStaticRaw = (t, path, state) => staticRawOfTemplate(t, path, state, 0)
 
 const getBlockName = (file, meaningless) => {
   const name = path.basename(file.opts.filename, path.extname(file.opts.filename))
@@ -183,6 +215,22 @@ export default function ({ types: t }) {
         if (!componentNode) return // chains / helpers / exotic shapes -> untouched
 
         const componentId = nextComponentId(state)
+
+        // Record `const Name = styled...` -> componentId (keyed by the
+        // declarator node, so shadowing can't confuse the lookup). Later
+        // templates in this file can then resolve `${Name}` at build time.
+        if (
+          path.parentPath.isVariableDeclarator() &&
+          t.isIdentifier(path.parentPath.node.id)
+        ) {
+          let ids = state.file.get(STYLED_IDS)
+          if (!ids) {
+            ids = new Map()
+            state.file.set(STYLED_IDS, ids)
+          }
+          ids.set(path.parentPath.node, componentId)
+        }
+
         const configProps = [
           t.objectProperty(t.identifier('componentId'), t.stringLiteral(componentId)),
         ]
@@ -200,14 +248,16 @@ export default function ({ types: t }) {
 
         // Build-time precompile: a template that is fully static after resolving
         // module constants (zero interpolations, or interpolations that are all
-        // literals / const members) is compiled with stylis at BUILD time and the
-        // finished rule emitted as `css` (registered under the componentId at
-        // runtime — no runtime css()/stylis), dropping the live template body.
-        // Works for any base (native tag or styled(Ident)); a styled(Ident)
-        // extender's own rule is independent of its base, and the sheet's group
-        // ordering (definition order) puts base rules before extender rules, so
-        // no folding is needed. Vendor prefixing is opt-in (SC v6 parity).
-        const raw = tryStaticRaw(t, path)
+        // literals / const members / same-file `${Component}` selectors /
+        // same-file static css`` fragments) is compiled with stylis at BUILD
+        // time and the finished rule emitted as `css` (registered under the
+        // componentId at runtime — no runtime css()/stylis), dropping the live
+        // template body. Works for any base (native tag or styled(Ident)); a
+        // styled(Ident) extender's own rule is independent of its base, and the
+        // sheet's group ordering (definition order) puts base rules before
+        // extender rules, so no folding is needed. Vendor prefixing is opt-in
+        // (SC v6 parity).
+        const raw = tryStaticRaw(t, path, state)
         if (raw != null) {
           const compiled = serialize(
             compile('.' + componentId + '{' + raw + '}'),

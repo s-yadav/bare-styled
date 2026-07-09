@@ -219,18 +219,25 @@ function queueStatic(componentId, parts) {
 // the plugin's build-time precompiled css when present, else the idle precompute
 // cache, else compiled inline here — and only ever computed once.
 const staticRegistered = new Set()
-function registerStatic(componentId, group, parts, precompiled) {
+function registerStatic(descriptor) {
+  // Hot-path guard: resolveDescriptor calls this on EVERY render of every
+  // static element. A generation-stamped flag on the descriptor is a single
+  // property compare (vs a Set hash lookup); the stamp is invalidated by
+  // __reset bumping `generation`, keeping it in sync with the sheet lifetime.
+  if (descriptor._regGen === generation) return
+  descriptor._regGen = generation
+  const componentId = descriptor.componentId
   if (staticRegistered.has(componentId)) return
   staticRegistered.add(componentId)
   let css
-  if (precompiled != null) {
-    css = precompiled
+  if (descriptor.css != null) {
+    css = descriptor.css // plugin's build-time precompiled rule string
   } else {
     css = precomputed.get(componentId)
-    if (css === undefined) css = serializeStatic(componentId, parts)
+    if (css === undefined) css = serializeStatic(componentId, descriptor.parts)
     else precomputed.delete(componentId) // now in the sheet; free the interim copy
   }
-  sheet.registerRule(group, componentId, css)
+  sheet.registerRule(descriptor.group, componentId, css)
 }
 
 // Definition-order group counter. Each styled component takes the next group at
@@ -240,6 +247,21 @@ function registerStatic(componentId, group, parts, precompiled) {
 let groupCounter = 0
 function nextGroup() {
   return groupCounter++
+}
+
+// A body is "flat" when it contains no nested blocks ({ }), parent selectors
+// (&), at-rules (@), or slashes (/) — i.e. it is a plain run of declarations
+// that stylis would serialize verbatim into a single rule. The slash check is
+// for comments: stylis strips /* */ and non-standard // comments, and a //
+// comment left in a raw rule would make it invalid CSS. It over-rejects
+// legitimate values like font:16px/1.5 or url(...) — those just take the
+// stylis path. Conservative but always correct.
+function isFlatBody(css) {
+  for (let i = 0; i < css.length; i++) {
+    const c = css.charCodeAt(i)
+    if (c === 123 || c === 125 || c === 38 || c === 64 || c === 47) return false // { } & @ /
+  }
+  return true
 }
 
 // Generated class for a resolved CSS body, hashed PER COMPONENT (componentId +
@@ -260,7 +282,16 @@ function classFor(descriptor, cssBody) {
   if (cached !== undefined) return cached
   const cls = 'js-' + hash(descriptor.componentId + cssBody)
   descriptor._cache.set(cssBody, cls)
-  sheet.registerRule(descriptor.group, cls, compileRules('.' + cls + '{' + cssBody + '}'))
+  // Flat bodies (plain declarations — no nesting, no parent selector, no
+  // at-rules) don't need a stylis compile: the finished rule is just
+  // `.cls{body}`. With prefixing off (the default) that skips stylis entirely
+  // on the dominant dynamic path; anything structured still goes through
+  // stylis, as does everything when vendor prefixing is enabled.
+  const rules =
+    !vendorPrefixes && isFlatBody(cssBody)
+      ? ['.' + cls + '{' + cssBody + '}']
+      : compileRules('.' + cls + '{' + cssBody + '}')
+  sheet.registerRule(descriptor.group, cls, rules)
   return cls
 }
 

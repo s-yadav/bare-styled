@@ -75,10 +75,38 @@ function splitRules(css) {
   return out
 }
 
+// ---- group offset math -------------------------------------------------------
+// groupStart(g) = sum of all lower groups' sizes. A naive loop is O(G) per rule
+// insert; with thousands of styled definitions (groups) that's O(G) work on the
+// mount path for every first-seen rule. A Fenwick (binary indexed) tree over
+// groupSizes makes both the prefix-sum query and the size increment O(log G).
+// The tree mirrors groupSizes (which stays the plain source of truth); it is
+// rebuilt on capacity growth (rare, amortized) and zeroed on __resetSheet.
+let bit = new Uint32Array(2048) // 1-based; bit[j] covers a range of groups ending at j-1
+
+function bitEnsure(count) {
+  // need indices 1..count addressable
+  if (count < bit.length) return
+  let cap = bit.length
+  while (cap <= count) cap <<= 1
+  bit = new Uint32Array(cap)
+  // Rebuild from groupSizes: extending a Fenwick tree in place is unsound (new
+  // high nodes would be missing prior updates), and this path is rare.
+  for (let g = 0; g < groupSizes.length; g++) {
+    const size = groupSizes[g]
+    if (size) for (let j = g + 1; j < bit.length; j += j & -j) bit[j] += size
+  }
+}
+
+function bitAdd(group, delta) {
+  for (let j = group + 1; j < bit.length; j += j & -j) bit[j] += delta
+}
+
 // Index of the first CSSOM rule of group g (sum of all lower groups' sizes).
 function groupStart(g) {
+  bitEnsure(g)
   let n = 0
-  for (let i = 0; i < g; i++) n += groupSizes[i] || 0
+  for (let j = g; j > 0; j -= j & -j) n += bit[j]
   return n
 }
 
@@ -98,12 +126,14 @@ function registerRule(group, className, css) {
   const el = getStyleElement()
   const sheet = cssomSheet || el.sheet
   if (sheet && typeof sheet.insertRule === 'function') {
+    bitEnsure(group + 1)
     let idx = groupStart(group) + (groupSizes[group] || 0) // end of this group's span
     for (let i = 0; i < parts.length; i++) {
       try {
         sheet.insertRule(parts[i], idx)
         idx++
         groupSizes[group] = (groupSizes[group] || 0) + 1
+        bitAdd(group, 1)
       } catch (e) {
         // CSSOM rejected the rule (e.g. a selector this browser can't parse).
         // Text goes to the SEPARATE fallback element — appending text to the
@@ -137,6 +167,7 @@ function __resetSheet() {
   registered.clear()
   groupRules.length = 0
   groupSizes.length = 0
+  bit.fill(0)
   if (styleElement && styleElement.parentNode) {
     styleElement.parentNode.removeChild(styleElement)
   }

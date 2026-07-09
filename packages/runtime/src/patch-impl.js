@@ -67,9 +67,10 @@ function resolveDescriptor(type, props) {
   if (type.isStatic) {
     // Styles never change: inject once under the componentId, which then doubles
     // as the style class. No per-render resolve or hash. registerStatic dedups
-    // internally against the sheet's lifetime (Set keyed by componentId), so it
-    // correctly re-registers after a __resetSheet and costs one Set lookup here.
-    engine.registerStatic(type.componentId, type.group, type.parts, type.css)
+    // via a generation stamp on the descriptor (one property compare per render)
+    // that engine.__reset invalidates, so it correctly re-registers after a
+    // __resetSheet.
+    engine.registerStatic(type)
   } else {
     // Prop-dependent: componentId is a marker (for `${Comp}` selectors); the
     // hash class carries the resolved styles, hashed per component and injected
@@ -82,9 +83,13 @@ function resolveDescriptor(type, props) {
     return { type: target, props: buildHostProps(p, className) }
   }
   // Component target: forward all props (minus `as`) + the className, which the
-  // component is expected to spread onto its host node.
-  const next = Object.assign({}, p)
-  delete next.as
+  // component is expected to spread onto its host node. Copy-skip loop instead
+  // of Object.assign + delete: this runs per render of every styled(Component)
+  // element, and `delete` transitions the object to dictionary mode.
+  const next = {}
+  for (const key in p) {
+    if (key !== 'as') next[key] = p[key]
+  }
   next.className = className
   return { type: target, props: next }
 }
