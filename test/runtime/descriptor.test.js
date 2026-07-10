@@ -29,6 +29,56 @@ describe('engine (render-time hash-class resolution)', () => {
     expect(getCss()).toContain('.' + b + '{color:blue;}')
   })
 
+  it('keyframes: injects @keyframes into the sheet and resolves to the name', () => {
+    const { keyframes } = require('styled-components')
+    const spin = keyframes`from { transform: rotate(0deg); } to { transform: rotate(360deg); }`
+    const parts = tag`animation: ${spin} 2s linear infinite;`
+    // static after flatten (keyframes object is not a function)
+    expect(engine.isStatic(parts)).toBe(true)
+    const body = engine.resolveParts(parts, {})
+    expect(body).toContain('animation: ' + spin.name + ' 2s linear infinite;')
+    expect(getCss()).toContain('@keyframes ' + spin.name)
+    expect(getCss()).toContain('rotate(360deg)')
+  })
+
+  it('keyframes: duck-typed, so a FOREIGN copy (throwing toString) still injects, and __resetSheet re-injects', () => {
+    // Simulates a Keyframes instance from a duplicate styled-components copy:
+    // instanceof fails everywhere, toString throws (SC v4+ behavior).
+    const foreign = {
+      name: 'kfforeign1',
+      rules: '0%{opacity:0;}100%{opacity:1;}',
+      getName: function () { return this.name },
+      toString: function () { throw new Error('untagged string interpolation') },
+    }
+    expect(engine.resolveParts([foreign], {})).toBe('kfforeign1')
+    expect(getCss()).toContain('@keyframes kfforeign1')
+    __resetSheet()
+    expect(getCss()).toBe('')
+    expect(engine.resolveParts([foreign], {})).toBe('kfforeign1')
+    expect(getCss()).toContain('@keyframes kfforeign1') // re-injected after reset
+  })
+
+  it('cacheParts: falls back to a naive interleave when css() throws (cross-copy safety)', () => {
+    const bomb = {
+      name: 'kfbomb',
+      rules: '0%{opacity:0;}',
+      getName: function () { return this.name },
+      toString: function () { throw new Error('boom') },
+    }
+    // Force the scCss path to throw by making the interpolation a Proxy that
+    // throws on any coercion attempt inside styled-components' flatten? Not
+    // needed: real SC only throws cross-copy. Instead call cacheParts with a
+    // strings array and verify the fallback shape directly via a throwing css:
+    // we simulate by passing a template whose interpolation styled-components
+    // itself cannot flatten without toString — the foreign keyframes object is
+    // kept as-is by our SAME-copy css() (instanceof miss -> toString throw is
+    // exactly the cross-copy case), so cacheParts must not crash.
+    const parts = engine.cacheParts(['animation: ', ' 1s;'], [bomb])
+    expect(Array.isArray(parts)).toBe(true)
+    const body = engine.resolveParts(parts, {})
+    expect(body).toContain('animation: kfbomb 1s;')
+  })
+
   it('flat dynamic bodies skip stylis but produce the same rule', () => {
     const d = { componentId: 'sc-flat', group: 0 }
     engine.classFor(d, 'color:tomato;padding:4px;') // flat -> fast path
@@ -74,5 +124,56 @@ describe('createStyled descriptor shape', () => {
     expect(El.displayName).toBe('Box')
     expect(String(El)).toBe('.sc-abc') // usable as a nested selector
     expect(Array.isArray(El.parts)).toBe(true)
+  })
+
+  it('statics passthrough: styled(Dropdown) exposes Dropdown.Item (compound components)', () => {
+    function Dropdown(props) { return null }
+    Dropdown.Item = function Item(props) { return null }
+    Dropdown.defaultProps = { open: false }
+    Dropdown.customStatic = 42
+
+    const StyledDropdown = createStyled(Dropdown, { componentId: 'sc-dd' })`color: red;`
+    expect(StyledDropdown.Item).toBe(Dropdown.Item)
+    expect(StyledDropdown.defaultProps).toBe(Dropdown.defaultProps)
+    expect(StyledDropdown.customStatic).toBe(42)
+    // own fields shadow the base — nothing leaks the wrong way
+    expect(StyledDropdown.componentId).toBe('sc-dd')
+    expect(StyledDropdown[IS_STYLED]).toBe(StyledDropdown)
+    expect(String(StyledDropdown)).toBe('.sc-dd')
+  })
+
+  it('statics passthrough: base with NON-WRITABLE toString (real SC component) must not throw', () => {
+    // styled-components v6 defines toString on its components as non-writable.
+    // In strict mode, assigning `element.toString = ...` THROUGH a prototype
+    // chain holding a read-only property throws — so the proto link must come
+    // after the own-field assignments. Use a real SC component as the base,
+    // exactly the prophecy shape (styled(RealSCComponent)).
+    const styled = require('styled-components').default
+    const SCBase = styled.div`color: red;`
+    expect(Object.getOwnPropertyDescriptor(SCBase, 'toString').writable).toBe(false)
+
+    const Wrapped = createStyled(SCBase, { componentId: 'sc-wrap' })`padding: 4px;`
+    expect(String(Wrapped)).toBe('.sc-wrap') // own toString shadows the read-only one
+    expect(Wrapped[IS_STYLED]).toBe(Wrapped)
+    expect(Wrapped.componentId).toBe('sc-wrap')
+    // SC statics still visible through the link
+    expect(Wrapped.styledComponentId).toBe('sc-wrap') // own field wins
+    expect(Wrapped.attrs).toBe(SCBase.attrs) // inherited from the SC base
+  })
+
+  it('statics passthrough survives descriptor-over-descriptor chains', () => {
+    function Dropdown(props) { return null }
+    Dropdown.Item = function Item(props) { return null }
+
+    const A = createStyled(Dropdown, { componentId: 'sc-a' })`color: red;`
+    const B = createStyled(A, { componentId: 'sc-b' })`padding: 4px;`
+    expect(B.Item).toBe(Dropdown.Item) // falls through two links
+    // every level keeps its own identity and fields
+    expect(B[IS_STYLED]).toBe(B)
+    expect(A[IS_STYLED]).toBe(A)
+    expect(B.componentId).toBe('sc-b')
+    expect(B.component).toBe(A)
+    expect(B.isStatic).toBe(true)
+    expect(String(B)).toBe('.sc-b')
   })
 })

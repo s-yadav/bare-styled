@@ -12,6 +12,11 @@ const engine = require('./engine')
 // across duplicate runtime copies.
 const IS_STYLED = Symbol.for('just-styled')
 
+// Count of descriptor renders that went through the forwardRef fallback (i.e.
+// paid a wrapper fiber instead of being resolved at element creation). Should
+// stay 0 in a correctly wired app; see the warning inside createStyled.
+let fallbackRenders = 0
+
 // The plugin emits `createStyled(component, { componentId, displayName })`tpl``.
 // The tagged template's interpolations stay live; styled-components' css()
 // flattens the static half once here, and the engine resolves the rest per
@@ -41,8 +46,35 @@ function createStyled(component, config) {
     if (isStatic && precompiled == null) engine.queueStatic(componentId, parts)
 
     // forwardRef so the descriptor is a valid element type and still renders
-    // correctly if neither the patch nor the jsx runtime is installed.
+    // correctly if it reaches React WITHOUT being intercepted at element
+    // creation. That should be rare: it means a wrapper fiber exists, which is
+    // exactly what just-styled removes. Known ways to get here:
+    //   - a file compiled without jsxImportSource 'just-styled' AND the
+    //     createElement patch failed to install (frozen ESM namespace);
+    //   - memo(StyledX) / lazy(...) — React unwraps those to the descriptor
+    //     internally, never re-entering element creation;
+    //   - a third-party lib creating elements via its own unpatched runtime.
+    // In dev this warns once per component so misses are visible instead of
+    // silently costing a fiber; __getFallbackRenders() counts every hit.
     const element = React.forwardRef(function JustStyled(props, ref) {
+      fallbackRenders++
+      if (
+        typeof process !== 'undefined' &&
+        process.env.NODE_ENV !== 'production' &&
+        !element._warnedFallback
+      ) {
+        element._warnedFallback = true
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[just-styled] <' +
+            (element.displayName || componentId) +
+            '> rendered through the forwardRef fallback — a wrapper fiber was created. ' +
+            'The element was made outside the wrapped JSX runtime/createElement patch ' +
+            '(unwrapped runtime, memo()/lazy() around the styled component, or a ' +
+            'third-party createElement). Rendering is correct, but the fiber win is ' +
+            'lost for this component.'
+        )
+      }
       const r = patchImpl.resolveDescriptor(element, props)
       return React.createElement(r.type, ref == null ? r.props : Object.assign({}, r.props, { ref }))
     })
@@ -60,6 +92,28 @@ function createStyled(component, config) {
     element.toString = function () {
       return '.' + componentId
     }
+
+    // Statics passthrough: `styled(Dropdown)` must still expose `Dropdown.Item`
+    // (compound components), custom statics, defaultProps, etc.
+    // styled-components does this by COPYING non-React statics
+    // (hoist-non-react-statics) with an exclusion list for its own internals; a
+    // prototype link gives the same property-access semantics with no copy and
+    // no collision risk — every field assigned above is an OWN property that
+    // shadows the base, and anything else falls through the chain (including
+    // through styled(styled(X)) descriptor chains). ORDER MATTERS: the link
+    // must come AFTER the own-field assignments — real styled-components v6
+    // components carry a NON-WRITABLE `toString`, and in strict mode assigning
+    // through a prototype chain that holds a read-only property throws
+    // ("Cannot assign to read only property 'toString'"). With the fields
+    // already own, the proto swap can't interfere. String tags have no statics.
+    if (component !== null && (typeof component === 'object' || typeof component === 'function')) {
+      try {
+        Object.setPrototypeOf(element, component)
+      } catch (e) {
+        /* exotic base: statics passthrough is best-effort */
+      }
+    }
+
     return element
   }
 }
@@ -83,4 +137,9 @@ module.exports = {
   },
   installCreateElementPatch: patchImpl.installCreateElementPatch,
   uninstallCreateElementPatch: patchImpl.uninstallCreateElementPatch,
+  // Diagnostics: how many descriptor renders paid a wrapper fiber (forwardRef
+  // fallback). 0 = every styled element was resolved at creation, as intended.
+  __getFallbackRenders: function () {
+    return fallbackRenders
+  },
 }

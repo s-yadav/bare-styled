@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>just-styled — performance report</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --ink: #16181d;
+    --muted: #5f6570;
+    --faint: #9aa1ac;
+    --line: #e7e9ee;
+    --surface: #f7f8fa;
+    --card: #ffffff;
+    --accent: #2a78d6;
+    --accent-soft: #e6f1fb;
+    --gray-bar: #a3a8b0;
+    --good: #0f6e56;
+    --good-soft: #e1f5ee;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: var(--surface);
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 32px 96px; }
+  header.hero { padding: 72px 0 40px; border-bottom: 1px solid var(--line); }
+  .eyebrow { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 14px; }
+  h1 { font-size: 40px; line-height: 1.15; font-weight: 700; letter-spacing: -0.02em; max-width: 820px; }
+  .sub { margin-top: 18px; font-size: 18px; color: var(--muted); max-width: 760px; }
+  .meta { margin-top: 22px; font-size: 13px; color: var(--faint); }
+  h2 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 72px 0 8px; scroll-margin-top: 24px; }
+  h2 .no { color: var(--faint); font-weight: 600; margin-right: 10px; }
+  .lead { color: var(--muted); max-width: 780px; margin-bottom: 28px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 36px 0 0; }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; }
+  .kpi .v { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .kpi .l { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .kpi.win .v { color: var(--good); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px 28px; }
+  .card h3 { font-size: 17px; font-weight: 650; margin-bottom: 8px; display: flex; align-items: baseline; gap: 10px; }
+  .card h3 .tag { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 20px; padding: 2px 10px; white-space: nowrap; }
+  .card p { font-size: 14.5px; color: var(--muted); }
+  .card p b, .card p code { color: var(--ink); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; background: #eef0f4; border-radius: 5px; padding: 1px 6px; }
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 30px 0 10px; flex-wrap: wrap; }
+  .flow .step { flex: 1 1 150px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; position: relative; margin-right: 26px; min-width: 150px; margin-bottom: 10px; }
+  .flow .step:last-child { margin-right: 0; }
+  .flow .step::after { content: "→"; position: absolute; right: -22px; top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 18px; }
+  .flow .step:last-child::after { content: ""; }
+  .flow .step .t { font-weight: 650; font-size: 14px; }
+  .flow .step .d { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .flow .step.hot { border-color: var(--accent); background: var(--accent-soft); }
+  .flow .step.hot .t { color: #185fa5; }
+  .flow .step.hot .d { color: #3d70a5; }
+  .chart-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px; margin-top: 20px; }
+  .chart-card h3 { font-size: 16px; font-weight: 650; margin-bottom: 2px; }
+  .chart-card .cap { font-size: 13px; color: var(--faint); margin-bottom: 18px; }
+  .chart-box { position: relative; width: 100%; }
+  .legend { display: flex; gap: 20px; font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 14px; overflow: hidden; font-size: 14px; margin-top: 20px; box-shadow: 0 0 0 1px var(--line); }
+  th { text-align: left; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); font-weight: 600; padding: 14px 16px; border-bottom: 1px solid var(--line); background: #fbfcfd; }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--ink); }
+  tr:last-child td { border-bottom: none; }
+  td .delta { font-weight: 650; color: var(--good); background: var(--good-soft); border-radius: 20px; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
+  tr.group td { background: #fbfcfd; font-weight: 650; font-size: 13px; color: var(--muted); }
+  .tiers { margin-top: 20px; }
+  .tier { display: grid; grid-template-columns: 220px 1fr 260px; gap: 18px; padding: 15px 20px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; align-items: center; }
+  .tier .name { font-weight: 650; font-size: 14px; }
+  .tier .name .when { display: block; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-top: 3px; }
+  .tier.build .name .when { color: var(--good); }
+  .tier.idle .name .when { color: #ba7517; }
+  .tier.dyn .name .when { color: var(--accent); }
+  .tier .ex { font-size: 13.5px; color: var(--muted); }
+  .tier .ex code { font-size: 12px; }
+  .tier .cost { font-size: 13px; color: var(--ink); font-weight: 500; }
+  .note { font-size: 13.5px; color: var(--faint); margin-top: 16px; max-width: 780px; }
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 12px 12px 0; padding: 18px 24px; margin: 26px 0; font-size: 15px; color: #1c3f63; max-width: 860px; }
+  .micro { display: flex; gap: 14px; margin-top: 20px; flex-wrap: wrap; }
+  .micro .m { flex: 1 1 220px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  .micro .m .v { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .micro .m .l { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 13px; color: var(--faint); }
+  @media print {
+    body { background: #fff; }
+    .chart-card, .card, .kpi, table { box-shadow: none; }
+    header.hero { padding-top: 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">just-styled · performance report · July 2026</div>
+  <h1>Same styled-components API. No wrapper fiber. 19–54% faster.</h1>
+  <p class="sub">just-styled reimplements the styled-components authoring model but resolves every
+  styled component to a plain host element at JSX time, and compiles fully-static templates to
+  finished CSS at build time. Benchmarked against real styled-components on identical source,
+  it wins all nine measured profiles.</p>
+  <div class="meta">jsdom · production React 18 · median of 12–25 iterations · identical DOM trees both ways · styled-components 6.4</div>
+  <div class="kpis">
+    <div class="kpi"><div class="v">23%</div><div class="l">avg. faster mount</div></div>
+    <div class="kpi"><div class="v">45%</div><div class="l">avg. faster re-render</div></div>
+    <div class="kpi win"><div class="v">54%</div><div class="l">best re-render (high-cardinality dynamic)</div></div>
+    <div class="kpi win"><div class="v">9 / 9</div><div class="l">profiles won</div></div>
+  </div>
+</header>
+
+<h2><span class="no">01</span>The core idea</h2>
+<p class="lead">Every styled-components element is <em>two</em> React fibers: a wrapper component
+(which runs hooks, reads theme context, computes styles) and the host element. On a 150-row data
+table that's ~1,200 extra fibers created on mount and reconciled on every render. just-styled
+removes them entirely — the styled component is resolved <em>before</em> React ever sees it.</p>
+
+<div class="flow">
+  <div class="step"><div class="t">styled.td`…`</div><div class="d">authoring — unchanged from styled-components</div></div>
+  <div class="step"><div class="t">Babel transform</div><div class="d">descriptor with a stable componentId; static CSS precompiled</div></div>
+  <div class="step hot"><div class="t">JSX runtime</div><div class="d">descriptor → plain <code>&lt;td class="…"&gt;</code> at element-creation time</div></div>
+  <div class="step"><div class="t">React</div><div class="d">sees only the host element — one fiber, not two</div></div>
+</div>
+
+<div class="callout">
+  <b>Decision that makes it safe:</b> styling itself deliberately copies styled-components — resolve
+  interpolations against props → hash → one class per distinct style, one rule inserted once. Output
+  CSS and cascade semantics are equivalent by construction; the performance comes from <em>structure</em>
+  (fewer fibers, work moved to build/idle time), not from a riskier styling model.
+</div>
+
+<h2><span class="no">02</span>Architecture decisions behind the numbers</h2>
+<p class="lead">Six decisions, ordered by impact.</p>
+
+<div class="grid2">
+  <div class="card">
+    <h3>Fiber elimination <span class="tag">mount +19–29%</span></h3>
+    <p>Descriptors are resolved in a wrapped automatic JSX runtime
+    (<code>jsxImportSource: 'just-styled'</code>) — deterministic, no monkeypatching. Non-styled
+    elements pay a single type check. The mount gain is flat across every profile and scale because
+    it is purely structural: it's the wrapper fibers that are gone.</p>
+  </div>
+  <div class="card">
+    <h3>Static work moved off the render path <span class="tag">re-render +43–51% (static rows)</span></h3>
+    <p>Templates provably static at build time ship as <b>finished CSS in the bundle</b> — zero runtime
+    style work. Static-but-unprovable templates compile during <code>requestIdleCallback</code>.
+    At render, a static element costs <b>one property compare</b>; styled-components still runs its
+    full wrapper + style pipeline per element.</p>
+  </div>
+  <div class="card">
+    <h3>Aggressive build-time resolution <span class="tag">27% of prophecy fully precompiled</span></h3>
+    <p>The precompiler resolves more than literals: module-const member chains
+    (<code>${theme.border}</code>), same-file <code>${Component}</code> selectors (the componentId was
+    just minted by the same pass), and same-file static <code>css``</code> fragments — inlined
+    recursively. These are the dominant patterns in real codebases.</p>
+  </div>
+  <div class="card">
+    <h3>Stylis skipped for flat dynamic bodies <span class="tag">6.5× cheaper per new variant</span></h3>
+    <p>A resolved body with no nesting / at-rules is already a valid rule: <code>.cls{body}</code> by
+    string concat (206&nbsp;ns) instead of a stylis compile (1,345&nbsp;ns). Value-position interpolations —
+    the common high-cardinality shape — all qualify. This flipped high-cardinality from the narrowest
+    profile to the widest (+54% re-render).</p>
+  </div>
+  <div class="card">
+    <h3>Group-ordered sheet + Fenwick tree <span class="tag">O(log G) rule insertion</span></h3>
+    <p>Every component gets a definition-order group; rules insert positionally at their group's end,
+    so base rules always precede <code>styled(Component)</code> extender rules and the cascade is
+    correct <em>regardless of render order</em> — with no render-time reordering. Offset math uses a
+    binary indexed tree: O(log G) vs the O(G) loop styled-components uses.</p>
+  </div>
+  <div class="card">
+    <h3>No vendor prefixing by default <span class="tag">2–3× smaller rules</span></h3>
+    <p>Matches styled-components v6. Removes prefixer work from every compile and shrinks every rule
+    (<code>display:flex</code> instead of four legacy spellings) — which also shrinks browser style-recalc
+    input, a win jsdom can't even measure. Opt-in on both build and runtime halves when needed.</p>
+  </div>
+</div>
+
+<h2><span class="no">03</span>The static tiers</h2>
+<p class="lead">Every component lands on the cheapest tier the compiler can prove. The further left
+the work happens, the less the user's device does.</p>
+
+<div class="tiers">
+  <div class="tier build">
+    <div class="name">Zero interpolations<span class="when">compiled at build</span></div>
+    <div class="ex"><code>styled.td`padding:6px 12px;`</code></div>
+    <div class="cost">runtime: insert one finished rule</div>
+  </div>
+  <div class="tier build">
+    <div class="name">Const members<span class="when">compiled at build</span></div>
+    <div class="ex"><code>border:1px solid ${theme.border};</code> — resolved into the rule</div>
+    <div class="cost">runtime: insert one finished rule</div>
+  </div>
+  <div class="tier build">
+    <div class="name">Component selectors<span class="when">compiled at build</span></div>
+    <div class="ex"><code>${Badge} { font-weight:600; }</code> — same-file componentId known to the compiler</div>
+    <div class="cost">runtime: insert one finished rule</div>
+  </div>
+  <div class="tier build">
+    <div class="name">Static css fragments<span class="when">compiled at build</span></div>
+    <div class="ex"><code>${chip}</code> — fragment body inlined recursively</div>
+    <div class="cost">runtime: insert one finished rule</div>
+  </div>
+  <div class="tier idle">
+    <div class="name">Runtime-static<span class="when">compiled at idle</span></div>
+    <div class="ex">static after flattening, but not provable at build (cross-module values, opaque expressions)</div>
+    <div class="cost">stylis during <code>requestIdleCallback</code>; render just inserts</div>
+  </div>
+  <div class="tier dyn">
+    <div class="name">Dynamic<span class="when">resolved per render</span></div>
+    <div class="ex"><code>color:${p => p.tint};</code> — hash class per distinct resolved style, cached per component</div>
+    <div class="cost">cache hit = map lookup; miss = concat (flat) or stylis (nested)</div>
+  </div>
+</div>
+<p class="note">Coverage measured on prophecy-frontend1 (ui-v3 + frontend atoms): 864 files scanned,
+275 with styled usage, <b>962 components compiled, 259 (27%) fully build-precompiled</b>, zero transform errors.</p>
+
+<h2><span class="no">04</span>Results</h2>
+<p class="lead">Two application-shaped trees — a dashboard (chrome + 150-row data table) and a
+card/table widget — compiled twice from identical source: once through real styled-components, once
+through the just-styled plugin + runtime. Both render the exact same DOM. Lower is better.</p>
+
+<div class="chart-card">
+  <h3>Mount</h3>
+  <div class="cap">median ms to mount the full tree, forced synchronous render</div>
+  <div class="legend">
+    <span><span class="sw" style="background:#2a78d6"></span>just-styled</span>
+    <span><span class="sw" style="background:#a3a8b0"></span>styled-components</span>
+  </div>
+  <div class="chart-box" style="height:430px"><canvas id="mountChart" role="img" aria-label="Mount times across nine profiles; just-styled 6.7 to 31.2 ms, styled-components 8.8 to 41.4 ms."></canvas></div>
+</div>
+
+<div class="chart-card">
+  <h3>Re-render</h3>
+  <div class="cap">median ms per state update (tick changes dynamic values across the tree)</div>
+  <div class="legend">
+    <span><span class="sw" style="background:#2a78d6"></span>just-styled</span>
+    <span><span class="sw" style="background:#a3a8b0"></span>styled-components</span>
+  </div>
+  <div class="chart-box" style="height:430px"><canvas id="updateChart" role="img" aria-label="Re-render times across nine profiles; just-styled 2.3 to 14.9 ms, styled-components 4.6 to 32.6 ms."></canvas></div>
+</div>
+
+<div class="chart-card">
+  <h3>Improvement by profile</h3>
+  <div class="cap">how much faster just-styled is, as a share of styled-components' time</div>
+  <div class="legend">
+    <span><span class="sw" style="background:#2a78d6"></span>mount</span>
+    <span><span class="sw" style="background:#1d9e75"></span>re-render</span>
+  </div>
+  <div class="chart-box" style="height:430px"><canvas id="deltaChart" role="img" aria-label="Percentage improvement per profile; mount 19 to 29 percent, re-render 37 to 54 percent."></canvas></div>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Profile</th><th class="num">DOM nodes</th><th class="num">SC mount</th><th class="num">JS mount</th><th class="num">Δ mount</th><th class="num">SC re-render</th><th class="num">JS re-render</th><th class="num">Δ re-render</th></tr>
+  </thead>
+  <tbody>
+    <tr class="group"><td colspan="8">Widget — cards + table; every row carries two static cells (id/total columns) plus tint cells</td></tr>
+    <tr><td>60×5, few tints</td><td class="num">508</td><td class="num">8.84</td><td class="num">6.74</td><td class="num"><span class="delta">+24%</span></td><td class="num">4.67</td><td class="num">2.29</td><td class="num"><span class="delta">+51%</span></td></tr>
+    <tr><td>60×5, all static</td><td class="num">508</td><td class="num">8.95</td><td class="num">6.84</td><td class="num"><span class="delta">+24%</span></td><td class="num">4.58</td><td class="num">2.26</td><td class="num"><span class="delta">+51%</span></td></tr>
+    <tr><td>60×5, unique tint per cell</td><td class="num">508</td><td class="num">9.82</td><td class="num">6.98</td><td class="num"><span class="delta">+29%</span></td><td class="num">6.32</td><td class="num">3.53</td><td class="num"><span class="delta">+44%</span></td></tr>
+    <tr><td>200×8, few tints</td><td class="num">2,228</td><td class="num">38.65</td><td class="num">31.17</td><td class="num"><span class="delta">+19%</span></td><td class="num">22.29</td><td class="num">12.94</td><td class="num"><span class="delta">+42%</span></td></tr>
+    <tr><td>200×8, all static</td><td class="num">2,228</td><td class="num">39.50</td><td class="num">31.15</td><td class="num"><span class="delta">+21%</span></td><td class="num">22.53</td><td class="num">12.74</td><td class="num"><span class="delta">+43%</span></td></tr>
+    <tr><td>200×8, unique tint per cell</td><td class="num">2,228</td><td class="num">41.41</td><td class="num">30.53</td><td class="num"><span class="delta">+26%</span></td><td class="num">32.60</td><td class="num">14.86</td><td class="num"><span class="delta">+54%</span></td></tr>
+    <tr class="group"><td colspan="8">Dashboard — app chrome + sidebar + stat cards + 150-row table; cell mix selects the profile</td></tr>
+    <tr><td>150 rows, mixed cells (real-world)</td><td class="num">1,242</td><td class="num">23.07</td><td class="num">17.69</td><td class="num"><span class="delta">+23%</span></td><td class="num">11.95</td><td class="num">6.45</td><td class="num"><span class="delta">+46%</span></td></tr>
+    <tr><td>150 rows, all-static cells</td><td class="num">1,242</td><td class="num">22.24</td><td class="num">16.22</td><td class="num"><span class="delta">+27%</span></td><td class="num">10.05</td><td class="num">5.56</td><td class="num"><span class="delta">+45%</span></td></tr>
+    <tr><td>150 rows, all-dynamic cells</td><td class="num">1,242</td><td class="num">23.27</td><td class="num">18.76</td><td class="num"><span class="delta">+19%</span></td><td class="num">12.57</td><td class="num">7.89</td><td class="num"><span class="delta">+37%</span></td></tr>
+  </tbody>
+</table>
+
+<h2><span class="no">05</span>Reading the results</h2>
+<div class="grid2">
+  <div class="card">
+    <h3>Mount is flat at ~19–29% — by design</h3>
+    <p>The mount gain barely moves between 508 and 2,228 nodes or between static and dynamic mixes.
+    That is the signature of the structural win: the wrapper fibers are gone, and that saving scales
+    linearly with tree size. It does not erode at real-page scale.</p>
+  </div>
+  <div class="card">
+    <h3>Re-render is where decisions compound</h3>
+    <p>Static-heavy rows approach <b>+51%</b> (one property compare per element vs a full wrapper
+    render), and high-cardinality dynamic hits <b>+54%</b> (every new style variant skips stylis).
+    The narrowest case, all-dynamic low-cardinality (+37%), is intentional: per-render resolution
+    matches styled-components' own algorithm, so the remaining edge there is purely the fiber.</p>
+  </div>
+  <div class="card">
+    <h3>The micro-numbers behind the dynamic win</h3>
+    <div class="micro">
+      <div class="m"><div class="v">1,345 ns</div><div class="l">stylis compile + serialize, typical dynamic body</div></div>
+      <div class="m"><div class="v">206 ns</div><div class="l">flat-body fast path (string concat), same rule</div></div>
+      <div class="m"><div class="v">57 ns</div><div class="l">flatness check early-out when a body needs stylis</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>What jsdom can't show — the numbers are conservative</h3>
+    <p>jsdom measures JS/React cost only. Browser-side wins are on top: CSSOM
+    <code>insertRule</code> with O(log G) offsets, and style recalc over rules that are 2–3× smaller
+    without vendor prefixes. The browser harnesses (<code>profiling/*/harness.html</code>) measure
+    those with a full style+layout flush per render.</p>
+  </div>
+</div>
+
+<h2><span class="no">06</span>Methodology &amp; caveats</h2>
+<p class="lead" style="margin-bottom:12px">Identical source compiled two ways; identical DOM verified by node count each run.
+Median over 12–25 iterations after 3 warmup mounts, <code>flushSync</code> rendering, production React.
+Run-to-run jsdom noise is roughly ±4 points — differences under that are directional.
+Components using <code>.attrs</code>/<code>.withConfig</code> or context theme intentionally fall back to
+real styled-components in both harnesses, exactly as they do in production.</p>
+
+<footer>
+  just-styled · benchmarks reproducible via <code>npx jest test/perf</code> (env: DASH_MODE, WIDGET_TINT, *_ROWS, *_ITERS)
+  and <code>profiling/dashboard|widget/harness.html</code> in a browser · July 2026
+</footer>
+
+</div>
+
+<script>
+const LABELS = [
+  'widget 60×5 · few', 'widget 60×5 · static', 'widget 60×5 · unique',
+  'widget 200×8 · few', 'widget 200×8 · static', 'widget 200×8 · unique',
+  'dash 150r · mixed', 'dash 150r · static', 'dash 150r · dynamic'
+];
+const JS = { mount: [6.74, 6.84, 6.98, 31.17, 31.15, 30.53, 17.69, 16.22, 18.76],
+             update: [2.29, 2.26, 3.53, 12.94, 12.74, 14.86, 6.45, 5.56, 7.89] };
+const SC = { mount: [8.84, 8.95, 9.82, 38.65, 39.50, 41.41, 23.07, 22.24, 23.27],
+             update: [4.67, 4.58, 6.32, 22.29, 22.53, 32.60, 11.95, 10.05, 12.57] };
+const dMount = SC.mount.map((s, i) => Math.round((s - JS.mount[i]) / s * 100));
+const dUpdate = SC.update.map((s, i) => Math.round((s - JS.update[i]) / s * 100));
+
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+Chart.defaults.color = '#5f6570';
+
+function bars(id, a, b) {
+  new Chart(document.getElementById(id), {
+    type: 'bar',
+    data: { labels: LABELS, datasets: [
+      { label: 'just-styled', data: a, backgroundColor: '#2a78d6', borderRadius: 4, maxBarThickness: 15 },
+      { label: 'styled-components', data: b, backgroundColor: '#a3a8b0', borderRadius: 4, maxBarThickness: 15 }
+    ]},
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.x.toFixed(2) + ' ms' } } },
+      scales: {
+        x: { grid: { color: '#eceef2' }, ticks: { callback: v => v + ' ms' } },
+        y: { grid: { display: false } }
+      }
+    }
+  });
+}
+bars('mountChart', JS.mount, SC.mount);
+bars('updateChart', JS.update, SC.update);
+
+new Chart(document.getElementById('deltaChart'), {
+  type: 'bar',
+  data: { labels: LABELS, datasets: [
+    { label: 'mount', data: dMount, backgroundColor: '#2a78d6', borderRadius: 4, maxBarThickness: 15 },
+    { label: 're-render', data: dUpdate, backgroundColor: '#1d9e75', borderRadius: 4, maxBarThickness: 15 }
+  ]},
+  options: {
+    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: c => c.dataset.label + ': +' + c.parsed.x + '% faster' } } },
+    scales: {
+      x: { grid: { color: '#eceef2' }, max: 60, ticks: { callback: v => '+' + v + '%' } },
+      y: { grid: { display: false } }
+    }
+  }
+});
+</script>
+</body>
+</html>

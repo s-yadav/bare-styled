@@ -123,7 +123,7 @@ function App() {
         React.createElement('option', { value: 'static' }, 'static (one rule both ways)'),
         React.createElement('option', { value: 'few' }, 'few (2 shared values)'),
         React.createElement('option', { value: 'unique' }, 'unique per cell (class per variant)')),
-      '  ≈ ', (rows * cols + 3 * 6 + rows + 4), ' host nodes/tree'),
+      '  ≈ ', (rows * (cols + 2) + 3 * 8 + rows + 4), ' host nodes/tree'),
     React.createElement('p', null,
       React.createElement('button', { onClick: run('both'), disabled: busy, style: { font: 'inherit', padding: '6px 12px', marginRight: 8 } }, 'Run both'),
       React.createElement('button', { onClick: run('styled-components'), disabled: busy, style: { font: 'inherit', padding: '6px 12px', marginRight: 8 } }, 'styled-components only'),

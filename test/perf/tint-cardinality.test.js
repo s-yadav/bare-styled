@@ -56,9 +56,14 @@ function stats(Widget, tintMode) {
 
 afterEach(() => { runtime.uninstallCreateElementPatch(); runtime.__resetSheet() })
 
+// The widget's rows also contain three STATIC td components (RowLabel,
+// RowLabelStrong, NumCell — one class each, independent of tint cardinality),
+// so the "few" budget is 2 tint classes + 3 static classes.
+const STATIC_TD_CLASSES = 3
+
 test('styled-components: cardinality tracked by generated classes', () => {
   const SC = build(false)
-  expect(stats(SC, 'few').distinctClasses).toBeLessThanOrEqual(3)
+  expect(stats(SC, 'few').distinctClasses).toBeLessThanOrEqual(2 + STATIC_TD_CLASSES)
   expect(stats(SC, 'unique').distinctClasses).toBeGreaterThan(ROWS * COLS * 0.8)
 })
 
@@ -67,7 +72,7 @@ test('just-styled: same class-based cardinality, and NO inline var/style on cell
   const few = stats(JS, 'few')
   const uniq = stats(JS, 'unique')
   // hash classes now, like styled-components:
-  expect(few.distinctClasses).toBeLessThanOrEqual(3)
+  expect(few.distinctClasses).toBeLessThanOrEqual(2 + STATIC_TD_CLASSES)
   expect(uniq.distinctClasses).toBeGreaterThan(ROWS * COLS * 0.8)
   // and no per-cell inline styles (the css-variable approach is gone):
   expect(few.distinctStyles).toBeLessThanOrEqual(1)

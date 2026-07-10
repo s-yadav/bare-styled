@@ -91,16 +91,67 @@ function hash(str) {
 // Flatten the tagged template once at definition time. Module values, css
 // fragments, styled-component selectors and style objects are baked into
 // strings here; user functions survive to be called per render.
+//
+// scCss can THROW at definition time when interpolated objects come from a
+// DIFFERENT styled-components copy than ours (e.g. a linked runtime with its
+// own node_modules): flatten's `instanceof Keyframes` misses the foreign
+// instance, falls through to `.toString()`, and Keyframes.toString throws
+// "interpolating a keyframe declaration into an untagged string". Deduping
+// styled-components in the app bundler is the real fix, but a template must
+// never crash module eval — so fall back to a naive interleave of the raw
+// strings and interpolations; resolveValue handles every chunk type from
+// there (including foreign keyframes, via duck-typing).
 function cacheParts(strings, interps) {
-  if (scCss) return scCss(strings, ...interps)
-  // Without styled-components we can only handle a plain (non-interpolated) template.
-  return [strings.join('')]
+  if (scCss) {
+    try {
+      return scCss(strings, ...interps)
+    } catch (e) {
+      /* fall through to the naive interleave */
+    }
+  }
+  if (interps.length === 0) return [strings.join('')]
+  const parts = []
+  for (let i = 0; i < strings.length; i++) {
+    if (strings[i]) parts.push(strings[i])
+    if (i < interps.length) parts.push(interps[i])
+  }
+  return parts
+}
+
+// ---- keyframes ---------------------------------------------------------------
+// A styled-components Keyframes object (duck-typed: { name, rules, getName } —
+// identical shape in v5/v6, and instanceof-free so it works across duplicate
+// styled-components copies). We inject the @keyframes rule into OUR sheet once
+// and resolve the interpolation to the animation name — keyframes therefore
+// work in compiled components without the styled-components sheet. Keyframes
+// are name-scoped and order-independent, so they share one lazily-created
+// group. The compiled rules are cached by name; sheet.registerRule dedups
+// (re-)insertion per sheet lifetime, so a __resetSheet re-injects correctly.
+let keyframesGroup = -1
+const compiledKeyframes = new Map() // name -> compiled rules array
+function isKeyframes(v) {
+  return (
+    typeof v.getName === 'function' &&
+    typeof v.name === 'string' &&
+    (typeof v.rules === 'string' || Array.isArray(v.rules))
+  )
+}
+function registerKeyframes(v) {
+  let rules = compiledKeyframes.get(v.name)
+  if (rules === undefined) {
+    const body = typeof v.rules === 'string' ? v.rules : v.rules.join('')
+    rules = compileRules('@keyframes ' + v.name + '{' + body + '}')
+    compiledKeyframes.set(v.name, rules)
+  }
+  if (keyframesGroup < 0) keyframesGroup = nextGroup()
+  sheet.registerRule(keyframesGroup, 'kf-' + v.name, rules)
+  return v.name
 }
 
 // Resolve one flattened value against props (execution context). Functions are
-// called (and their result re-resolved), arrays/fragments are joined. Objects
-// that aren't styled components are stringified defensively (keyframes' toString
-// throws until injected — swallow that; keyframes support comes later).
+// called (and their result re-resolved), arrays/fragments are joined, keyframes
+// are injected into our sheet and resolve to their animation name. Other
+// objects are stringified defensively (swallowing any toString throw).
 function resolveValue(v, props) {
   if (v === null || v === undefined || v === false || v === '') return ''
   const t = typeof v
@@ -124,6 +175,7 @@ function resolveValue(v, props) {
     return out
   }
   if (v.styledComponentId) return '.' + v.styledComponentId
+  if (isKeyframes(v)) return registerKeyframes(v)
   try {
     return typeof v.toString === 'function' ? v.toString() : ''
   } catch (e) {

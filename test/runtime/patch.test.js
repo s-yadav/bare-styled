@@ -7,6 +7,7 @@ import {
   uninstallCreateElementPatch,
   getCss,
   __resetSheet,
+  __getFallbackRenders,
 } from 'just-styled/runtime'
 
 global.IS_REACT_ACT_ENVIRONMENT = true
@@ -106,5 +107,35 @@ describe('descriptor resolution (hash-class, no wrapper fiber)', () => {
     const el = container.querySelector('div')
     expect(el.className).toMatch(/^sc-nb js-[a-z0-9]+$/)
     expect(getCss()).toMatch(/background:\s*gray/)
+  })
+})
+
+describe('forwardRef fallback detection (fiber-win diagnostics)', () => {
+  it('unintercepted render pays a fiber: counter increments and warns once per component', () => {
+    uninstallCreateElementPatch() // simulate a missed interception
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const Box = createStyled('div', { componentId: 'sc-fb', displayName: 'FbBox' })`color: red;`
+      const before = __getFallbackRenders()
+      // Raw, unpatched createElement: the descriptor reaches React as a TYPE,
+      // so the forwardRef body must run (wrapper fiber) — for both instances.
+      render(React.createElement('div', null, React.createElement(Box, { key: 1 }), React.createElement(Box, { key: 2 })))
+      expect(container.querySelectorAll('.sc-fb')).toHaveLength(2) // still renders correctly
+      expect(__getFallbackRenders()).toBe(before + 2) // each fallback render counted
+      const ours = warn.mock.calls.filter(c => String(c[0]).includes('[just-styled]'))
+      expect(ours).toHaveLength(1) // warned once per component, not per render
+      expect(String(ours[0][0])).toContain('FbBox')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('intercepted render pays nothing: counter unchanged with the patch installed', () => {
+    // beforeEach installed the patch
+    const Box = createStyled('div', { componentId: 'sc-nofb' })`color: blue;`
+    const before = __getFallbackRenders()
+    render(React.createElement(Box, null, 'x'))
+    expect(container.querySelector('.sc-nofb')).not.toBeNull()
+    expect(__getFallbackRenders()).toBe(before) // resolved at creation — no fiber
   })
 })

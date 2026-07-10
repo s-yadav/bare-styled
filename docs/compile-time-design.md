@@ -91,11 +91,14 @@ excludes it — this survives descriptors carrying a `styledComponentId`.
   swallowed (that interpolation drops, the rest of the rule applies). Use a
   module-scope theme constant, or a CSS-variable theme. Reading context would
   require a per-component fiber, defeating the point.
-- **`keyframes`** interpolated into a template is not injected yet (best-effort;
-  animation may not apply).
-- **`styled(styledComponent)`** (a descriptor wrapping another descriptor): the
-  outer is resolved before the inner, so on an equal-specificity conflict the
-  inner rule (inserted later) can win. Edge case.
+- **`keyframes` interpolations ARE supported**: the engine duck-types the
+  Keyframes object ({ name, rules, getName } — stable across SC v5/v6 and
+  across duplicate styled-components copies), injects `@keyframes <name>` into
+  the just-styled sheet once (deduped by name, re-injected after a sheet
+  reset), and resolves the interpolation to the animation name.
+- **`styled(styledComponent)`** cascade is handled by the sheet's group
+  ordering (definition-order groups): base rules always precede extender rules,
+  so the extender wins equal-specificity conflicts regardless of render order.
 - Per-subtree `StyleSheetManager` config (custom stylis plugins, target sheet,
   nonce) is not honored on the flattened path.
 

@@ -26,42 +26,67 @@ global.IS_REACT_ACT_ENVIRONMENT = true
 const ROWS = +process.env.WIDGET_ROWS || 60
 const COLS = +process.env.WIDGET_COLS || 5
 const ITERS = +process.env.WIDGET_ITERS || 25
+// Cell mix: 'few' (2 shared dynamic tints, default), 'unique' (a distinct tint
+// per cell — per-variant class worst case), 'static' (all tint cells static).
+const TINT = process.env.WIDGET_TINT || 'few'
 
-// A widget touching many styled patterns. Escaped \${…} are styled-components
-// interpolations (resolved at flatten by just-styled); {…} are JSX expressions.
-// Deliberately avoids ThemeProvider/context theme (a known just-styled gap);
-// uses a module `theme` constant instead, which resolves statically.
+// A widget touching many styled patterns, with STATIC components at row scale
+// (two static cells per row in every mode — the real-world id/label/total-column
+// shape). Escaped \${…} are styled-components interpolations (resolved at
+// flatten by just-styled); {…} are JSX expressions. Deliberately avoids
+// ThemeProvider/context theme (a known just-styled gap); uses a module `theme`
+// constant instead, which resolves statically.
 const SOURCE = `
   import React from 'react'
-  import styled, { css } from 'styled-components'
+  import styled, { css, keyframes } from 'styled-components'
 
   const theme = { fg: '#222', accent: '#4f46e5', border: '#e5e7eb' }
   const pad = css\`padding: 8px 12px;\`                                  // css fragment
 
   const Card = styled.div\`
     border: 1px solid \${theme.border}; border-radius: 8px; \${pad}      // module value + fragment
-    background: \${p => p.bg};                                           // dynamic -> css var
+    background: \${p => p.bg};                                           // dynamic -> hash class
   \`
-  const Title = styled.h3\`font-size: 16px; margin: 0; color: \${theme.fg};\`  // fully static
+  const Title = styled.h3\`font-size: 16px; margin: 0; color: \${theme.fg};\`  // static (build-precompiled)
   const Rowc = styled.div\`display: flex; gap: 8px; align-items: center;\`
   const Badge = styled.span\`border-radius: 10px; padding: 2px 8px; background: \${p => p.color}; color: #fff;\`
   const Avatar = styled.div\`width: 28px; height: 28px; border-radius: 50%; background: \${p => p.color};\`
   const Button = styled.button\`
     border: none; border-radius: 6px; padding: 6px 10px;
-    \${p => p.primary && css\`background: \${theme.accent}; color: white;\`}   // block fn -> bail to SC
+    \${p => p.primary && css\`background: \${theme.accent}; color: white;\`}   // block fn -> resolved per render
   \`
   const IconButton = styled(Button)\`padding: 4px 6px;\`                  // styled(StyledComponent)
   function CellBase({ className, children }) { return <td className={className}>{children}</td> }
   const Cell = styled(CellBase)\`padding: 4px 8px; border-bottom: 1px solid \${theme.border}; color: \${p => p.tint};\`  // styled(NonStyled) + dynamic
+  const CellStatic = styled(CellBase)\`padding: 4px 8px; border-bottom: 1px solid \${theme.border}; color: #444;\`      // static tint cell
   const Field = styled.input.attrs({ type: 'text' })\`border: 1px solid \${theme.border};\`   // .attrs -> untouched (real SC)
 
-  export function Widget({ rows, cols, tick }) {
+  // ---- STATIC components, rendered at row scale ----
+  const RowLabel = styled.td\`padding: 4px 8px; border-bottom: 1px solid #e5e7eb; color: #94a3b8; font-variant-numeric: tabular-nums;\` // zero-interp
+  const RowLabelStrong = styled(RowLabel)\`font-weight: 600; color: #475569;\`   // static styled(Styled) extender
+  const chip = css\`border-radius: 10px; padding: 2px 8px; font-size: 11px;\`
+  const TagStatic = styled.span\`\${chip} background: #eef2ff; color: #3730a3;\` // fragment -> inlined at build
+  const alignEnd = Math.random() < 2 ? 'right' : 'left'                        // opaque to the build resolver
+  const NumCell = styled.td\`padding: 4px 8px; border-bottom: 1px solid \${theme.border}; text-align: \${alignEnd}; color: #475569;\` // runtime-static
+  const pulse = keyframes\`0% { opacity: 0.4; } 100% { opacity: 1; }\`
+  const LiveDot = styled.span\`display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; animation: \${pulse} 1.2s ease-in-out infinite alternate;\` // keyframes injection
+
+  function tintFor(mode, r, c, cols) {
+    if (mode === 'few') return (r + c) % 2 ? '#333' : '#777'
+    const n = (r * cols + c) >>> 0
+    return '#' + (((n * 2654435761) >>> 8) & 0xffffff).toString(16).padStart(6, '0')
+  }
+
+  export function Widget({ rows, cols, tick, tintMode = 'few' }) {
+    const C = tintMode === 'static' ? CellStatic : Cell
     return (
       <div>
         <Rowc>
           {[0, 1, 2].map(i => (
             <Card key={i} bg={i === tick % 3 ? '#f6f6ff' : '#fff'}>
               <Title>Card {i}</Title>
+              <TagStatic>live</TagStatic>
+              <LiveDot />
               <Badge color={['#e11d48', '#16a34a', '#2563eb'][i]}>{i + tick}</Badge>
               <Avatar color={'hsl(' + ((i * 40 + tick) % 360) + ' 60% 60%)'} />
               <IconButton primary={i === 0}>Go</IconButton>
@@ -72,7 +97,9 @@ const SOURCE = `
         <table><tbody>
           {rows.map(r => (
             <tr key={r}>
-              {cols.map(c => <Cell key={c} tint={(r + c) % 2 ? '#333' : '#777'}>{r + '-' + c}</Cell>)}
+              {r % 5 === 0 ? <RowLabelStrong>{r}</RowLabelStrong> : <RowLabel>{r}</RowLabel>}
+              {cols.map(c => <C key={c} tint={tintFor(tintMode, r, c, cols.length)}>{r + '-' + c}</C>)}
+              <NumCell>{(r * 13) % 997}</NumCell>
             </tr>
           ))}
         </tbody></table>
@@ -107,7 +134,7 @@ const median = arr => { const s = [...arr].sort((a, b) => a - b); return s[Math.
 function bench(Widget) {
   const rows = Array.from({ length: ROWS }, (_, i) => i)
   const cols = Array.from({ length: COLS }, (_, i) => i)
-  const el = tick => React.createElement(Widget, { rows, cols, tick })
+  const el = tick => React.createElement(Widget, { rows, cols, tick, tintMode: TINT })
 
   const mountWith = () => {
     const c = document.createElement('div'); document.body.appendChild(c)
@@ -152,7 +179,7 @@ test(`widget mount/re-render: styled-components vs just-styled (${ROWS}x${COLS})
   const pct = (a, b) => (((a - b) / a) * 100).toFixed(0) + '%'
   // eslint-disable-next-line no-console
   console.log(
-    `\njust-styled vs styled-components — widget ${ROWS}x${COLS} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
+    `\njust-styled vs styled-components — widget ${ROWS}x${COLS}, tint=${TINT} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
     `\n                 mount      re-render` +
     `\n  styled-comp   ${sc.mount.toFixed(2).padStart(6)}     ${sc.update.toFixed(2).padStart(6)}` +
     `\n  just-styled   ${js.mount.toFixed(2).padStart(6)}     ${js.update.toFixed(2).padStart(6)}` +
