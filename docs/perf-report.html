@@ -40,10 +40,11 @@
   .kpi .v { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; color: var(--accent); font-variant-numeric: tabular-nums; }
   .kpi .l { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .kpi.win .v { color: var(--good); }
-  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px 28px; }
-  .card h3 { font-size: 17px; font-weight: 650; margin-bottom: 8px; display: flex; align-items: baseline; gap: 10px; }
-  .card h3 .tag { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 20px; padding: 2px 10px; white-space: nowrap; }
+  .card h3 { font-size: 17px; font-weight: 650; margin-bottom: 10px; line-height: 1.35; }
+  .card h3 .tag { display: block; width: fit-content; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 20px; padding: 3px 10px; white-space: nowrap; margin-top: 8px; }
   .card p { font-size: 14.5px; color: var(--muted); }
   .card p b, .card p code { color: var(--ink); }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; background: #eef0f4; border-radius: 5px; padding: 1px 6px; }
@@ -135,7 +136,7 @@ removes them entirely — the styled component is resolved <em>before</em> React
 </div>
 
 <h2><span class="no">02</span>Architecture decisions behind the numbers</h2>
-<p class="lead">Six decisions, ordered by impact.</p>
+<p class="lead">Four decisions carry most of the win, plus a set of smaller optimizations that add up.</p>
 
 <div class="grid2">
   <div class="card">
@@ -166,18 +167,14 @@ removes them entirely — the styled component is resolved <em>before</em> React
     the common high-cardinality shape — all qualify. This flipped high-cardinality from the narrowest
     profile to the widest (+54% re-render).</p>
   </div>
-  <div class="card">
-    <h3>Group-ordered sheet + Fenwick tree <span class="tag">O(log G) rule insertion</span></h3>
-    <p>Every component gets a definition-order group; rules insert positionally at their group's end,
-    so base rules always precede <code>styled(Component)</code> extender rules and the cascade is
-    correct <em>regardless of render order</em> — with no render-time reordering. Offset math uses a
-    binary indexed tree: O(log G) vs the O(G) loop styled-components uses.</p>
-  </div>
-  <div class="card">
-    <h3>No vendor prefixing by default <span class="tag">2–3× smaller rules</span></h3>
-    <p>Matches styled-components v6. Removes prefixer work from every compile and shrinks every rule
-    (<code>display:flex</code> instead of four legacy spellings) — which also shrinks browser style-recalc
-    input, a win jsdom can't even measure. Opt-in on both build and runtime halves when needed.</p>
+  <div class="card" style="grid-column: 1 / -1;">
+    <h3>Other minor improvements</h3>
+    <ul style="font-size:14.5px;color:var(--muted);padding-left:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:6px 28px;">
+      <li><b style="color:var(--ink);font-weight:600;">Faster sheet ordering logic</b> — rule-position math on the stylesheet is O(log&nbsp;n) instead of a linear walk, so cold mounts with thousands of components insert rules cheaply.</li>
+      <li><b style="color:var(--ink);font-weight:600;">More caching</b> — resolved styles cache per component, compiled static rules cache by componentId, keyframes by name; unchanged styles never recompute anything.</li>
+      <li><b style="color:var(--ink);font-weight:600;">Hot-path optimizations</b> — fixed-arity JSX wrappers (no <code>arguments</code>/<code>apply</code> deopt), a single cheap type check for every non-styled element, generation stamps instead of set lookups on the static path.</li>
+      <li><b style="color:var(--ink);font-weight:600;">No object mutation after creation</b> — props objects are built once with copy-skip loops instead of <code>delete</code>, keeping V8 hidden classes stable on the per-element path.</li>
+    </ul>
   </div>
 </div>
 
@@ -299,10 +296,10 @@ through the just-styled plugin + runtime. Both render the exact same DOM. Lower 
   </div>
   <div class="card">
     <h3>What jsdom can't show — the numbers are conservative</h3>
-    <p>jsdom measures JS/React cost only. Browser-side wins are on top: CSSOM
-    <code>insertRule</code> with O(log G) offsets, and style recalc over rules that are 2–3× smaller
-    without vendor prefixes. The browser harnesses (<code>profiling/*/harness.html</code>) measure
-    those with a full style+layout flush per render.</p>
+    <p>jsdom measures JS/React cost only. Browser-side effects — CSSOM rule insertion and style
+    recalc — are on top of these numbers. The browser harnesses
+    (<code>profiling/*/harness.html</code>) measure those with a full style+layout flush per
+    render.</p>
   </div>
 </div>
 
