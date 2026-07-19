@@ -93,7 +93,7 @@ const ScoreCell = styled.td`padding:6px 12px; border-top:1px solid ${theme.borde
 // static styled(StyledComponent) -> build-precompiled extender over a runtime-static base
 const TotalCell = styled(ScoreCell)`font-weight:600; color:#111827;`
 
-// ---- .attrs -> left untouched, runs on real styled-components (fallback) ----
+// ---- .attrs -> compiled natively (attrs applied by the just-styled runtime) ----
 const Field = styled.input.attrs({ type: 'text' })`border:1px solid ${theme.border}; border-radius:6px; padding:6px 10px;`
 
 const NAV = ['Home', 'Reports', 'Data', 'Pipelines', 'Settings']

@@ -66,10 +66,27 @@ describe('fast transform vs babel plugin (differential)', () => {
     expect(b[ids[3]].css).toBeUndefined() // Dyn stays live
   })
 
-  it('leaves .attrs chains and dynamic fragments untouched/live like babel', () => {
+  it('compiles .attrs chains and keeps dynamic fragments live, like babel', () => {
     const f = fastRun(SHARED)
-    expect(f).toContain('styled.input.attrs({})`x: 1;`') // untouched, byte-for-byte
+    expect(f).toMatch(/Chain = _createStyled\("input", \{ [^)]*attrs: \[\{\}\]/) // attrs compiled
     expect(f).toMatch(/DynFrag = _createStyled\("b", \{ [^}]*\}\)`\$\{frag\} padding: 2px;`/) // live
+  })
+
+  it('withConfig parity: fixed componentId + shouldForwardProp compile, unknown keys bail (both engines)', () => {
+    const src = `
+      import styled from 'styled-components'
+      const Named = styled.span.withConfig({ componentId: 'my-id' })\`color: red;\`
+      const Menu = styled.div.withConfig({ shouldForwardProp: p => p !== 'x' })\`padding: 2px;\`
+      const Weird = styled.b.withConfig({ ssr: true })\`x: 1;\`
+    `
+    const b = babelRun(src)
+    const f = fastRun(src)
+    for (const out of [b, f]) {
+      expect(out).toMatch(/componentId:\s*"my-id"/)
+      expect(out).toContain('.my-id{color:red;}')
+      expect(out).toMatch(/shouldForwardProp:\s*p => p !== 'x'/)
+      expect(out).toMatch(/\.withConfig\(\{\s*ssr: true\s*\}\)`x: 1;`/) // bailed identically
+    }
   })
 
   it('bails to live on invalid escapes (cooked null), like babel', () => {
@@ -111,6 +128,54 @@ describe('fast transform vs babel plugin (differential)', () => {
 })
 
 describe('fast transform e2e (render through the runtime)', () => {
+  it('callback .attrs survives the pipeline: transform -> eval -> render', () => {
+    const { JSDOM } = require('jsdom')
+    const dom = new JSDOM('<div id="r"></div>')
+    global.window = dom.window
+    global.document = dom.window.document
+    const runtime = require('just-styled/runtime')
+
+    const src = `
+      import React from 'react'
+      import styled from 'styled-components'
+      const Input = styled.input.attrs((props) => ({
+        type: props.$secret ? 'password' : 'text',
+        'data-kind': 'field',
+      }))\`border: 1px solid #ccc; width: \${p => p.$w}px;\`
+      export function App() { return <Input $secret $w={120} /> }
+    `
+    const fast = fastTransform(src, { filename: FILENAME }).code
+    const { code } = transformSync(fast, {
+      filename: FILENAME,
+      babelrc: false,
+      configFile: false,
+      presets: [[require.resolve('@babel/preset-react'), { runtime: 'classic' }]],
+      plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')],
+    })
+    const requireShim = r => {
+      if (r === 'just-styled/runtime') return runtime
+      if (r === 'just-styled/runtime/patch') {
+        runtime.installCreateElementPatch()
+        return {}
+      }
+      return require(r)
+    }
+    const mod = { exports: {} }
+    new Function('exports', 'require', 'module', code)(mod.exports, requireShim, mod)
+
+    const React = require('react')
+    const { renderToStaticMarkup } = require('react-dom/server')
+    const html = renderToStaticMarkup(React.createElement(mod.exports.App))
+    expect(html).toContain('type="password"') // callback saw $secret
+    expect(html).toContain('data-kind="field"')
+    expect(html).not.toContain('$secret') // transient props filtered from the DOM
+    expect(runtime.getCss()).toMatch(/width:\s*120px/) // interpolation resolved
+    runtime.uninstallCreateElementPatch()
+    runtime.__resetSheet()
+    delete global.window
+    delete global.document
+  })
+
   it('fast-transformed code renders identically', () => {
     /** environment: this test file runs in node; use jsdom manually */
     const { JSDOM } = require('jsdom')

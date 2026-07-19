@@ -35,8 +35,15 @@ jest moduleNameMapper and the profiling build scripts map by path.
   `createStyled(component, { componentId, displayName, [css] })\`tpl\`` with
   interpolations kept live. `componentId` = `sc-<fileHash>-<n>` (stable marker
   class + `${Comp}` selector target via descriptor `toString`).
-- `.attrs` / `.withConfig` chains and `css`/`keyframes`/`createGlobalStyle`
-  helpers are untouched → run on real styled-components (intended fallback).
+- `.attrs(...)` / `.withConfig({ componentId, displayName, shouldForwardProp })`
+  chains COMPILE NATIVELY (both engines; identical bail rules — unknown
+  withConfig keys stay on real SC). Runtime semantics match SC: attrs OVERRIDE
+  props (className joins, style merges), applied base-first across extension
+  chains (`_attrsAll` precomputed at definition — per-level application would
+  reverse the order); custom shouldForwardProp REPLACES the default filter and
+  threads from the outermost descriptor (`_sfp`). The factory is chainable at
+  runtime too. Only `css`/`keyframes`/`createGlobalStyle` helpers remain
+  untouched → real styled-components (intended fallback).
 - Descriptor = `React.forwardRef` object, self-referenced under
   `Symbol.for('just-styled')` (`isDescriptor: type[IS_STYLED] === type`).
   The wrapped JSX runtime resolves descriptors to host elements at

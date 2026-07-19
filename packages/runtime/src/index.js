@@ -33,7 +33,9 @@ function createStyled(component, config) {
   const componentId = config.componentId
   const displayName = config.displayName
   const precompiled = config.css // build-time stylis-serialized rule for a fully-static template
-  return function (strings) {
+  const ownAttrs = config.attrs || null // .attrs(objOrFn) chain, in application order
+  const shouldForwardProp = config.shouldForwardProp // .withConfig custom prop filter
+  const tag = function (strings) {
     const interps = Array.prototype.slice.call(arguments, 1)
     // A precompiled rule is static by definition; otherwise flatten the static
     // half once and decide static-vs-dynamic from whether any function survives.
@@ -44,6 +46,23 @@ function createStyled(component, config) {
     // render — queue it for idle precompilation so that work happens off the
     // render critical path (see engine.queueStatic).
     if (isStatic && precompiled == null) engine.queueStatic(componentId, parts)
+
+    // Attrs across a descriptor chain apply base-first (extender overrides),
+    // matching styled-components' folded ordering. Precomputed here so the
+    // render path applies one flat list with zero chain walking.
+    let attrsAll = null
+    {
+      const baseAll = component !== null && component !== undefined && component._attrsAll
+      if (baseAll && ownAttrs) attrsAll = baseAll.concat(ownAttrs)
+      else if (baseAll) attrsAll = baseAll
+      else if (ownAttrs) attrsAll = ownAttrs
+    }
+    // Effective shouldForwardProp for the chain: extender's config wins, else
+    // inherit the base's (styled-components' folding semantics).
+    const sfp =
+      shouldForwardProp ||
+      (component !== null && component !== undefined && component._sfp) ||
+      undefined
 
     // forwardRef so the descriptor is a valid element type and still renders
     // correctly if it reaches React WITHOUT being intercepted at element
@@ -75,7 +94,7 @@ function createStyled(component, config) {
             'lost for this component.'
         )
       }
-      const r = patchImpl.resolveDescriptor(element, props)
+      const r = patchImpl.unwrap(element, props) // full chain + attrs
       return React.createElement(r.type, ref == null ? r.props : Object.assign({}, r.props, { ref }))
     })
 
@@ -88,6 +107,8 @@ function createStyled(component, config) {
     element.css = precompiled
     element.isStatic = isStatic
     element.target = component
+    element._attrsAll = attrsAll // base-first flat attrs list (null when none)
+    element._sfp = sfp // effective shouldForwardProp for the chain
     if (displayName) element.displayName = displayName
     element.toString = function () {
       return '.' + componentId
@@ -107,8 +128,12 @@ function createStyled(component, config) {
     // rules live in the just-styled sheet, SC only carries the class names.
     // (Cross-sheet cascade ties with the SC wrapper's own rules remain the
     // documented limitation.)
-    element.attrs = []
+    // element.attrs is the REAL base-first list so a folding SC applies our
+    // attrs itself with its own execution context (theme included) — the shim
+    // then receives the post-attrs context and must not re-apply them.
+    element.attrs = attrsAll || []
     element.foldedComponentIds = []
+    if (sfp) element.shouldForwardProp = sfp
     element.componentStyle = {
       isStatic: isStatic,
       baseStyle: undefined,
@@ -140,6 +165,27 @@ function createStyled(component, config) {
 
     return element
   }
+
+  // Chainable factory, so runtime-level (untransformed) usage supports the
+  // full authoring surface: createStyled(C, cfg).attrs(a).withConfig(w)`...`.
+  // Each link returns a NEW factory with accumulated config; ids/groups are
+  // only consumed when the template is finally applied.
+  tag.attrs = function (attrDef) {
+    return createStyled(
+      component,
+      Object.assign({}, config, { attrs: (config.attrs || []).concat([attrDef]) })
+    )
+  }
+  tag.withConfig = function (cfg) {
+    const next = Object.assign({}, config)
+    if (cfg) {
+      if (cfg.componentId) next.componentId = cfg.componentId
+      if (cfg.displayName) next.displayName = cfg.displayName
+      if (cfg.shouldForwardProp) next.shouldForwardProp = cfg.shouldForwardProp
+    }
+    return createStyled(component, next)
+  }
+  return tag
 }
 
 module.exports = {

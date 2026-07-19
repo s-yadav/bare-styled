@@ -27,6 +27,41 @@ function isDescriptor(type) {
   return type !== null && typeof type === 'object' && type[IS_STYLED] === type
 }
 
+// Apply a base-first list of attrs (objects or fns of the execution context)
+// to props, styled-components semantics: each attr's keys OVERRIDE the context
+// (the fn received the props and owns default logic), except `className`
+// (joined) and `style` (shallow-merged). Attr fns that throw (e.g. context
+// theme access — unsupported) are dropped like style interpolations are.
+function applyAttrs(attrsList, props) {
+  const context = {}
+  for (const key in props) context[key] = props[key]
+  for (let i = 0; i < attrsList.length; i++) {
+    const attrDef = attrsList[i]
+    let resolved
+    if (typeof attrDef === 'function') {
+      try {
+        resolved = attrDef(context)
+      } catch (e) {
+        resolved = null
+      }
+    } else {
+      resolved = attrDef
+    }
+    if (!resolved) continue
+    for (const key in resolved) {
+      const v = resolved[key]
+      if (key === 'className') {
+        context.className = context.className ? context.className + ' ' + v : v
+      } else if (key === 'style') {
+        context.style = Object.assign({}, context.style, v)
+      } else {
+        context[key] = v
+      }
+    }
+  }
+  return context
+}
+
 // Props kept on a native tag regardless of @emotion/is-prop-valid.
 function isAlwaysKept(key) {
   return (
@@ -42,13 +77,21 @@ function isAlwaysKept(key) {
 }
 
 // Filter props for a native tag (drop non-DOM props styled-components style),
-// set the resolved className, and drop the `as` control prop.
-function buildHostProps(props, className) {
+// set the resolved className, and drop the `as` control prop. A custom
+// shouldForwardProp (withConfig) REPLACES the default filter for ordinary
+// props, matching styled-components; className/style/children stay managed.
+function buildHostProps(props, className, sfp, target) {
   const next = {}
   if (props) {
     for (const key in props) {
       if (key === 'as') continue
-      if (isAlwaysKept(key) || isPropValid(key)) next[key] = props[key]
+      if (sfp) {
+        if (key === 'className' || key === 'style' || key === 'children' || sfp(key, target)) {
+          next[key] = props[key]
+        }
+      } else if (isAlwaysKept(key) || isPropValid(key)) {
+        next[key] = props[key]
+      }
     }
   }
   next.className = className
@@ -79,17 +122,20 @@ function styleClassesFor(type, props) {
 }
 
 // Resolve a descriptor + props into { type, props } for the real element.
-// Exported so createStyled's forwardRef body can render even without the patch.
+// `sfp` is the effective shouldForwardProp for the chain (threaded from the
+// outermost descriptor — extender's config wins, styled-components' folding
+// semantics). Attrs are NOT applied here — unwrap applies the chain's full
+// base-first attrs list exactly once before resolution starts.
 //
 // Cascade ordering (styled(StyledComponent), same element, etc.) is handled by
 // the sheet's group ordering — each component's rule lands in its definition-order
 // group, so a base always precedes its extender. Nothing to reorder here.
-function resolveDescriptor(type, props) {
+function resolveDescriptor(type, props, sfp) {
   const p = props || EMPTY
   const className = styleClassesFor(type, p) + (p.className ? ' ' + p.className : '')
   const target = p.as || type.component
   if (typeof target === 'string') {
-    return { type: target, props: buildHostProps(p, className) }
+    return { type: target, props: buildHostProps(p, className, sfp, target) }
   }
   // Component target: forward all props (minus `as`) + the className, which the
   // component is expected to spread onto its host node. Copy-skip loop instead
@@ -105,10 +151,16 @@ function resolveDescriptor(type, props) {
 
 // Resolve a descriptor (and unwrap a descriptor-wrapping-descriptor chain) to
 // the final { type, props }. Callers first check isDescriptor, so `type` here
-// is always a descriptor.
+// is always a descriptor. The chain's attrs (precomputed base-first at
+// definition as `_attrsAll`) are applied ONCE up front — base attrs first,
+// extender's later so the extender overrides, matching styled-components'
+// folded ordering — and the merged context feeds both style resolution and the
+// final element props.
 function unwrap(type, props) {
-  let r = resolveDescriptor(type, props)
-  while (isDescriptor(r.type)) r = resolveDescriptor(r.type, r.props)
+  const p = type._attrsAll ? applyAttrs(type._attrsAll, props || EMPTY) : props
+  const sfp = type._sfp
+  let r = resolveDescriptor(type, p, sfp)
+  while (isDescriptor(r.type)) r = resolveDescriptor(r.type, r.props, sfp)
   return r
 }
 
@@ -198,5 +250,7 @@ module.exports = {
   wrapJsxDev, // jsxDEV
   wrapCreateElement, // classic createElement (variadic)
   resolveDescriptor,
+  unwrap, // full chain resolution incl. attrs (used by the forwardRef fallback)
+  applyAttrs,
   styleClassesFor, // styled-components fold interop (componentStyle shim)
 }

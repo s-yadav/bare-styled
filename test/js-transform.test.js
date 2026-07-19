@@ -84,14 +84,36 @@ describe('js-transform (decoupled createStyled emit)', () => {
     expect(out).toMatch(/createStyled\)?\(Base,/)
   })
 
-  it('leaves .attrs / .withConfig chains untouched (real styled-components)', () => {
+  it('compiles .attrs chains: expressions stay live, in application order, precompile intact', () => {
     const out = run(`
       import styled from 'styled-components'
-      const A = styled.div.attrs(() => ({}))\`color: red;\`
-      const B = styled.div.withConfig({ componentId: 'x' })\`color: red;\`
+      const Field = styled.input.attrs({ type: 'text' })\`border: 1px solid #ccc;\`
+      const Chained = styled.a.attrs({ href: '#' }).attrs(p => ({ title: p.title || 't' }))\`color: blue;\`
+    `)
+    expect(out).toMatch(/attrs:\s*\[\{\s*type:\s*'text'\s*\}\]/)
+    expect(out).toMatch(/css:\s*"\.sc-[a-z0-9]+-0\{border:1px solid #ccc;\}"/) // attrs don't block precompile
+    // chained: object first, fn second (application order)
+    expect(out).toMatch(/attrs:\s*\[\{\s*href:\s*'#'\s*\},\s*p => \(\{\s*title:/)
+  })
+
+  it('compiles .withConfig: componentId/displayName override, shouldForwardProp stays live', () => {
+    const out = run(`
+      import styled from 'styled-components'
+      const Named = styled.span.withConfig({ componentId: 'my-fixed-id', displayName: 'Named' })\`color: red;\`
+      const Menu = styled.div.withConfig({ shouldForwardProp: prop => !['disabled'].includes(prop) })\`padding: 2px;\`
+    `)
+    expect(out).toMatch(/componentId:\s*"my-fixed-id"/)
+    expect(out).toMatch(/displayName:\s*"Named"/)
+    expect(out).toContain(".my-fixed-id{color:red;}")
+    expect(out).toMatch(/shouldForwardProp:\s*prop =>/)
+  })
+
+  it('leaves unknown withConfig options untouched (real styled-components)', () => {
+    const out = run(`
+      import styled from 'styled-components'
+      const B = styled.div.withConfig({ ssr: true })\`color: red;\`
     `)
     expect(out).not.toContain('createStyled')
-    expect(out).toContain('.attrs(')
     expect(out).toContain('.withConfig(')
   })
 

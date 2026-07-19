@@ -221,6 +221,93 @@ function staticRawOfTemplate(quasi, ctx, depth) {
   return raw
 }
 
+// Unwrap TS expression wrappers between chain links or around the whole tag:
+// `styled(X)<T>` / `.withConfig({...})<T>` / casts / parens.
+function unwrapTsWrappers(node) {
+  while (
+    node &&
+    (node.type === 'TSInstantiationExpression' ||
+      node.type === 'TSAsExpression' ||
+      node.type === 'TSNonNullExpression' ||
+      node.type === 'ParenthesizedExpression')
+  ) {
+    node = node.expression
+  }
+  return node
+}
+
+// Parse the innermost simple styled form plus any `.attrs(expr)` /
+// `.withConfig({...})` chain links. Bail rules are IDENTICAL to the Babel
+// engine's parseChain so both engines transform the same set: one withConfig
+// max, object literal only, known keys only, componentId/displayName must be
+// string literals. Returns null to leave the template untouched.
+function parseChain(tagIn, styledNames) {
+  let tag = unwrapTsWrappers(tagIn)
+  const attrs = [] // arg NODES, collected outer-first, reversed below
+  let withConfig = null
+  while (
+    tag.type === 'CallExpression' &&
+    tag.callee.type === 'MemberExpression' &&
+    !tag.callee.computed &&
+    isIdent(tag.callee.property) &&
+    (tag.callee.property.name === 'attrs' || tag.callee.property.name === 'withConfig') &&
+    tag.arguments.length === 1
+  ) {
+    const arg = tag.arguments[0]
+    if (tag.callee.property.name === 'attrs') {
+      attrs.push(arg)
+    } else {
+      if (withConfig || arg.type !== 'ObjectExpression') return null
+      withConfig = arg
+    }
+    tag = unwrapTsWrappers(tag.callee.object)
+  }
+
+  let component = null
+  if (
+    tag.type === 'MemberExpression' &&
+    !tag.computed &&
+    isIdent(tag.object) &&
+    styledNames.has(tag.object.name) &&
+    isIdent(tag.property)
+  ) {
+    component = { kind: 'tag', name: tag.property.name }
+  } else if (
+    tag.type === 'CallExpression' &&
+    isIdent(tag.callee) &&
+    styledNames.has(tag.callee.name) &&
+    tag.arguments.length === 1
+  ) {
+    const arg = tag.arguments[0]
+    if (isLit(arg) && typeof arg.value === 'string') component = { kind: 'tag', name: arg.value }
+    else if (isIdent(arg)) component = { kind: 'ident', name: arg.name, node: arg }
+  }
+  if (!component) return null
+
+  let componentId
+  let displayName
+  let shouldForwardProp
+  if (withConfig) {
+    for (const prop of withConfig.properties) {
+      if (prop.type !== 'Property' || prop.computed) return null
+      const key = isIdent(prop.key) ? prop.key.name : isLit(prop.key) ? prop.key.value : null
+      if (key === 'componentId') {
+        if (!isLit(prop.value) || typeof prop.value.value !== 'string') return null
+        componentId = prop.value.value
+      } else if (key === 'displayName') {
+        if (!isLit(prop.value) || typeof prop.value.value !== 'string') return null
+        displayName = prop.value.value
+      } else if (key === 'shouldForwardProp') {
+        shouldForwardProp = prop.value
+      } else {
+        return null // unknown withConfig option -> real styled-components
+      }
+    }
+  }
+  attrs.reverse() // application order
+  return { component, attrs, componentId, displayName, shouldForwardProp }
+}
+
 // Walk the AST collecting styled tagged templates IN SOURCE ORDER, tracking
 // function depth (module-scope check) and the enclosing declarator name.
 const SKIP_KEYS = { type: 1, start: 1, end: 1, loc: 1, range: 1 }
@@ -234,28 +321,20 @@ function collectTargets(program, styledNames) {
   }
   function visit(node, fnDepth, nameHint) {
     if (node.type === 'TaggedTemplateExpression') {
-      const tag = node.tag
-      let component = null
-      if (
-        tag.type === 'MemberExpression' &&
-        !tag.computed &&
-        isIdent(tag.object) &&
-        styledNames.has(tag.object.name) &&
-        isIdent(tag.property)
-      ) {
-        component = { kind: 'tag', name: tag.property.name }
-      } else if (
-        tag.type === 'CallExpression' &&
-        isIdent(tag.callee) &&
-        styledNames.has(tag.callee.name) &&
-        tag.arguments.length === 1
-      ) {
-        const arg = tag.arguments[0]
-        if (isLit(arg) && typeof arg.value === 'string') component = { kind: 'tag', name: arg.value }
-        else if (isIdent(arg)) component = { kind: 'ident', name: arg.name, node: arg }
-      }
-      if (component) {
-        found.push({ node: node, tag: tag, quasi: node.quasi, component, fnDepth, nameHint })
+      const parsed = parseChain(node.tag, styledNames)
+      if (parsed) {
+        found.push({
+          node: node,
+          tag: node.tag,
+          quasi: node.quasi,
+          component: parsed.component,
+          attrs: parsed.attrs,
+          cfgComponentId: parsed.componentId,
+          cfgDisplayName: parsed.displayName,
+          shouldForwardProp: parsed.shouldForwardProp,
+          fnDepth,
+          nameHint,
+        })
       }
     }
     const nextDepth = FN[node.type] ? fnDepth + 1 : fnDepth
@@ -348,17 +427,34 @@ export function fastTransform(code, options = {}) {
     // engine). Module-scope covers effectively all real-world usage.
     if (t.fnDepth > 0) continue
 
-    const componentId = `${nsPrefix}sc-${fileHash}-${position++}`
+    // withConfig componentId wins over the minted one (styled-components
+    // semantics); minting only happens when actually needed.
+    const componentId = t.cfgComponentId || `${nsPrefix}sc-${fileHash}-${position++}`
     const props = ['componentId: ' + JSON.stringify(componentId)]
 
     if (useDisplayName) {
       const componentName = t.nameHint
-      const dn = componentName
-        ? blockName === componentName
-          ? componentName
-          : `${prefixLeadingDigit(blockName)}__${componentName}`
-        : prefixLeadingDigit(blockName)
+      const dn =
+        t.cfgDisplayName ||
+        (componentName
+          ? blockName === componentName
+            ? componentName
+            : `${prefixLeadingDigit(blockName)}__${componentName}`
+          : prefixLeadingDigit(blockName))
       if (dn) props.push('displayName: ' + JSON.stringify(dn.replace(/[^_a-zA-Z0-9-]/g, '')))
+    }
+
+    // .attrs / shouldForwardProp: the original expressions ride along as
+    // SOURCE SLICES (still evaluated at module scope, in application order).
+    if (t.attrs && t.attrs.length) {
+      props.push(
+        'attrs: [' + t.attrs.map(a => code.slice(a.start, a.end)).join(', ') + ']'
+      )
+    }
+    if (t.shouldForwardProp) {
+      props.push(
+        'shouldForwardProp: ' + code.slice(t.shouldForwardProp.start, t.shouldForwardProp.end)
+      )
     }
 
     // Build-time precompile (identical policy to the Babel plugin).

@@ -31,7 +31,7 @@ const IconButton = styled(Button)`padding: 4px 6px;` // styled(StyledComponent)
 function CellBase({ className, children }) { return <td className={className}>{children}</td> }
 const Cell = styled(CellBase)`padding: 4px 8px; border-bottom: 1px solid ${theme.border}; color: ${p => p.tint};` // dynamic tint -> hash class per distinct value (both libs)
 const CellStatic = styled(CellBase)`padding: 4px 8px; border-bottom: 1px solid ${theme.border}; color: #444;` // static tint -> plain class both ways
-const Field = styled.input.attrs({ type: 'text' })`border: 1px solid ${theme.border}; padding: 4px; width: 60px;` // .attrs -> untouched (real SC)
+const Field = styled.input.attrs({ type: 'text' })`border: 1px solid ${theme.border}; padding: 4px; width: 60px;` // .attrs -> compiled (native attrs support)
 
 // ---- STATIC components, rendered at row scale ----
 // zero-interpolation -> build-precompiled

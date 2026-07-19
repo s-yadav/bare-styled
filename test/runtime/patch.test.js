@@ -110,6 +110,114 @@ describe('descriptor resolution (hash-class, no wrapper fiber)', () => {
   })
 })
 
+describe('native .attrs / .withConfig (styled-components semantics)', () => {
+  it('object attrs land on the host; incoming props are overridden by attrs', () => {
+    const Field = createStyled('input', { componentId: 'sc-att1', attrs: [{ type: 'text' }] })`border: 1px solid #ccc;`
+    render(React.createElement(Field, { type: 'password', defaultValue: 'x' }))
+    const el = container.querySelector('input')
+    expect(el.getAttribute('type')).toBe('text') // attrs override props (SC v5.1+ semantics)
+    expect(el.className).toBe('sc-att1') // attrs don't break the static path
+    expect(getCss()).toContain('.sc-att1{border:1px solid #ccc;}')
+  })
+
+  it('fn attrs receive the context and feed style interpolations', () => {
+    const Sized = createStyled('div', {
+      componentId: 'sc-att2',
+      attrs: [p => ({ $pad: (p.$pad || 2) * 2 })],
+    })`padding: ${p => p.$pad}px;`
+    render(React.createElement(Sized, { $pad: 4 }, 'x'))
+    expect(getCss()).toContain('padding: 8px;') // interpolation saw the attr-resolved value
+  })
+
+  it('className joins and style merges instead of overriding', () => {
+    const Boxy = createStyled('div', {
+      componentId: 'sc-att3',
+      attrs: [{ className: 'from-attrs', style: { margin: '1px' } }],
+    })`color: red;`
+    render(React.createElement(Boxy, { className: 'from-props', style: { top: '2px' } }, 'x'))
+    const el = container.querySelector('div')
+    expect(el.className).toContain('sc-att3')
+    expect(el.className).toContain('from-props')
+    expect(el.className).toContain('from-attrs')
+    expect(el.style.margin).toBe('1px')
+    expect(el.style.top).toBe('2px')
+  })
+
+  it('chain attrs apply base-first so the extender overrides (SC folded ordering)', () => {
+    const Base = createStyled('a', { componentId: 'sc-att4', attrs: [{ title: 'base', href: '#b' }] })`color: blue;`
+    const Ext = createStyled(Base, { componentId: 'sc-att5', attrs: [{ title: 'ext' }] })`font-weight: 600;`
+    render(React.createElement(Ext, null, 'x'))
+    const el = container.querySelector('a')
+    expect(el.getAttribute('title')).toBe('ext') // extender wins
+    expect(el.getAttribute('href')).toBe('#b') // base attr survives
+    expect(el.className).toContain('sc-att4')
+    expect(el.className).toContain('sc-att5')
+  })
+
+  it('chained callback attrs see earlier attrs results in their context (SC accumulation)', () => {
+    const Acc = createStyled('div', {
+      componentId: 'sc-acc',
+      attrs: [
+        { 'data-step': 'one' },
+        ctx => ({ 'data-seen': ctx['data-step'] }), // sees the object attr's result
+        ctx => ({ 'data-final': ctx['data-seen'] + '-two' }), // sees the previous callback's result
+      ],
+    })`color: red;`
+    render(React.createElement(Acc, null, 'x'))
+    const el = container.querySelector('div')
+    expect(el.getAttribute('data-seen')).toBe('one')
+    expect(el.getAttribute('data-final')).toBe('one-two')
+  })
+
+  it('callback attrs OVERRIDE incoming props for the same key (SC v5.1+ semantics)', () => {
+    const Btn = createStyled('button', {
+      componentId: 'sc-fnov',
+      attrs: [p => ({ type: p.$submit ? 'submit' : 'button' })],
+    })`padding: 2px;`
+    render(React.createElement(Btn, { type: 'reset', $submit: true }, 'x'))
+    expect(container.querySelector('button').getAttribute('type')).toBe('submit')
+  })
+
+  it('a throwing callback attr (e.g. context theme access) is dropped, rest still applies', () => {
+    const Risky = createStyled('div', {
+      componentId: 'sc-boom',
+      attrs: [
+        p => ({ role: p.theme.mode }), // props.theme is undefined -> throws
+        { 'data-safe': 'yes' },
+      ],
+    })`color: red;`
+    render(React.createElement(Risky, null, 'x'))
+    const el = container.querySelector('div')
+    expect(el.hasAttribute('role')).toBe(false) // throwing attr dropped
+    expect(el.getAttribute('data-safe')).toBe('yes') // later attr unaffected
+    expect(el.className).toBe('sc-boom') // component still renders + styles
+    expect(getCss()).toContain('.sc-boom{color:red;}')
+  })
+
+  it('withConfig shouldForwardProp replaces the default prop filter', () => {
+    const Item = createStyled('div', {
+      componentId: 'sc-sfp',
+      shouldForwardProp: prop => !['disabled', 'danger'].includes(prop),
+    })`color: ${p => (p.danger ? 'red' : 'black')};`
+    render(React.createElement(Item, { danger: true, title: 'kept' }, 'x'))
+    const el = container.querySelector('div')
+    expect(el.hasAttribute('danger')).toBe(false) // filtered by the custom fn
+    expect(el.getAttribute('title')).toBe('kept')
+    expect(getCss()).toMatch(/color:\s*red/)
+  })
+
+  it('runtime factory is chainable: .attrs(...).withConfig(...)``', () => {
+    const Btn = createStyled('button', { componentId: 'sc-will-be-overridden' })
+      .attrs({ type: 'button' })
+      .withConfig({ componentId: 'sc-chained' })`padding: 2px;`
+    render(React.createElement(Btn, null, 'x'))
+    const el = container.querySelector('button')
+    expect(el.getAttribute('type')).toBe('button')
+    expect(el.className).toBe('sc-chained')
+    expect(getCss()).toContain('.sc-chained{padding:2px;}')
+  })
+})
+
 describe('forwardRef fallback detection (fiber-win diagnostics)', () => {
   it('unintercepted render pays a fiber: counter increments and warns once per component', () => {
     uninstallCreateElementPatch() // simulate a missed interception

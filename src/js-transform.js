@@ -8,10 +8,13 @@
 // components' heavy machinery — it just detects the styled form, generates a
 // stable componentId + displayName, and injects the runtime import.
 //
-// Only the simple forms compile: `styled.tag`, `styled('tag')`, `styled(Ident)`.
-// Anything with a chain (`.attrs`, `.withConfig`), the helpers (`css`,
-// `keyframes`, `createGlobalStyle`), css-prop, and exotic tag shapes are left
-// untouched and render through real styled-components.
+// The simple forms compile — `styled.tag`, `styled('tag')`, `styled(Ident)` —
+// including `.attrs(...)` / `.withConfig({ componentId, displayName,
+// shouldForwardProp })` chains (attrs expressions stay live; the runtime
+// applies them per render with styled-components semantics). The helpers
+// (`css`, `keyframes`, `createGlobalStyle`), css-prop, unknown withConfig
+// options and exotic tag shapes are left untouched and render through real
+// styled-components.
 import syntax from '@babel/plugin-syntax-jsx'
 import path from 'path'
 import { addNamed, addSideEffect } from '@babel/helper-module-imports'
@@ -29,6 +32,81 @@ const STYLED_IDS = 'just-styled-component-ids' // VariableDeclarator node -> com
 
 // Guard against pathological fragment-in-fragment nesting while resolving.
 const MAX_STATIC_DEPTH = 8
+
+// Unwrap TS expression wrappers that can sit between chain links or around the
+// whole tag: `styled(X)<T>` / `.withConfig({...})<T>` (TSInstantiationExpression),
+// `as` casts, non-null assertions, parens.
+const unwrapTsWrappers = node => {
+  while (
+    node &&
+    (node.type === 'TSInstantiationExpression' ||
+      node.type === 'TSAsExpression' ||
+      node.type === 'TSNonNullExpression' ||
+      node.type === 'ParenthesizedExpression')
+  ) {
+    node = node.expression
+  }
+  return node
+}
+
+// Parse a full `styled...` tag chain: the innermost simple form plus any
+// `.attrs(expr)` / `.withConfig({ ... })` links, in any order. Returns
+// { componentNode, attrs (application order), componentId?, displayName?,
+// shouldForwardProp? } or null to leave the template untouched (unknown
+// withConfig keys, non-literal componentId/displayName, multiple withConfig —
+// those still run on real styled-components). Kept strict and IDENTICAL to
+// the fast engine's rules so both engines transform the same set.
+const parseChain = (t, tagIn) => {
+  let tag = unwrapTsWrappers(tagIn)
+  const attrs = [] // collected outer-first, reversed below
+  let withConfig = null
+  while (
+    t.isCallExpression(tag) &&
+    t.isMemberExpression(tag.callee) &&
+    !tag.callee.computed &&
+    t.isIdentifier(tag.callee.property) &&
+    (tag.callee.property.name === 'attrs' || tag.callee.property.name === 'withConfig') &&
+    tag.arguments.length === 1
+  ) {
+    const arg = tag.arguments[0]
+    if (tag.callee.property.name === 'attrs') {
+      attrs.push(arg)
+    } else {
+      if (withConfig || !t.isObjectExpression(arg)) return null
+      withConfig = arg
+    }
+    tag = unwrapTsWrappers(tag.callee.object)
+  }
+  const componentNode = parseSimpleTag(t, tag)
+  if (!componentNode) return null
+
+  let componentId
+  let displayName
+  let shouldForwardProp
+  if (withConfig) {
+    for (const prop of withConfig.properties) {
+      if (!t.isObjectProperty(prop) || prop.computed) return null
+      const key = t.isIdentifier(prop.key)
+        ? prop.key.name
+        : t.isStringLiteral(prop.key)
+        ? prop.key.value
+        : null
+      if (key === 'componentId') {
+        if (!t.isStringLiteral(prop.value)) return null
+        componentId = prop.value.value
+      } else if (key === 'displayName') {
+        if (!t.isStringLiteral(prop.value)) return null
+        displayName = prop.value.value
+      } else if (key === 'shouldForwardProp') {
+        shouldForwardProp = prop.value
+      } else {
+        return null // unknown withConfig option -> real styled-components
+      }
+    }
+  }
+  attrs.reverse() // AST is outermost-first; application order is chain order
+  return { componentNode, attrs, componentId, displayName, shouldForwardProp }
+}
 
 // Reject anything that isn't exactly `styled.tag`, `styled('tag')`, or
 // `styled(Ident)`. Returns the component node (a string literal for native
@@ -211,10 +289,14 @@ export default function ({ types: t }) {
       TaggedTemplateExpression(path, state) {
         const tag = path.node.tag
         if (!isStyled(t)(tag, state)) return
-        const componentNode = parseSimpleTag(t, tag)
-        if (!componentNode) return // chains / helpers / exotic shapes -> untouched
+        const parsed = parseChain(t, tag)
+        if (!parsed) return // helpers / exotic shapes / unknown withConfig -> untouched
+        const { componentNode, attrs, shouldForwardProp } = parsed
 
-        const componentId = nextComponentId(state)
+        // withConfig componentId wins over the minted one (styled-components
+        // semantics); minting only happens when actually needed so positions
+        // stay stable.
+        const componentId = parsed.componentId || nextComponentId(state)
 
         // Record `const Name = styled...` -> componentId (keyed by the
         // declarator node, so shadowing can't confuse the lookup). Later
@@ -235,7 +317,7 @@ export default function ({ types: t }) {
           t.objectProperty(t.identifier('componentId'), t.stringLiteral(componentId)),
         ]
         if (useDisplayName(state)) {
-          const displayName = getDisplayName(t, path, state)
+          const displayName = parsed.displayName || getDisplayName(t, path, state)
           if (displayName) {
             configProps.push(
               t.objectProperty(
@@ -244,6 +326,25 @@ export default function ({ types: t }) {
               )
             )
           }
+        }
+        // .attrs(...) chain: the expressions stay LIVE (evaluated at module
+        // scope inside the config), in application order; the runtime applies
+        // them per render with styled-components semantics.
+        if (attrs.length) {
+          configProps.push(
+            t.objectProperty(
+              t.identifier('attrs'),
+              t.arrayExpression(attrs.map(a => t.cloneNode(a, true)))
+            )
+          )
+        }
+        if (shouldForwardProp) {
+          configProps.push(
+            t.objectProperty(
+              t.identifier('shouldForwardProp'),
+              t.cloneNode(shouldForwardProp, true)
+            )
+          )
         }
 
         // Build-time precompile: a template that is fully static after resolving
