@@ -93,6 +93,30 @@ function createStyled(component, config) {
       return '.' + componentId
     }
 
+    // styled-components FOLD interop. An untransformed chain over this
+    // descriptor — styled(Stack).attrs(...)`` / .withConfig(...) — runs on real
+    // styled-components, which sees styledComponentId, takes its FOLDING path,
+    // and renders `target` directly: the descriptor is never created as an
+    // element, so neither the JSX interception nor the forwardRef fallback can
+    // resolve its styles. Instead SC reads the base's styles from
+    // `componentStyle.generateAndInjectStyles(executionContext, ...)` per
+    // render (and prepends `foldedComponentIds` + merges `attrs`). This shim
+    // routes that call into OUR engine: static rules register under the
+    // componentId, dynamic interpolations resolve against SC's merged
+    // execution context (props + theme + attrs) into our hash class — the
+    // rules live in the just-styled sheet, SC only carries the class names.
+    // (Cross-sheet cascade ties with the SC wrapper's own rules remain the
+    // documented limitation.)
+    element.attrs = []
+    element.foldedComponentIds = []
+    element.componentStyle = {
+      isStatic: isStatic,
+      baseStyle: undefined,
+      generateAndInjectStyles: function (executionContext) {
+        return patchImpl.styleClassesFor(element, executionContext || {})
+      },
+    }
+
     // Statics passthrough: `styled(Dropdown)` must still expose `Dropdown.Item`
     // (compound components), custom statics, defaultProps, etc.
     // styled-components does this by COPYING non-React statics

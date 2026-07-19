@@ -130,3 +130,42 @@ it('three-level styled(styled(styled)): rules ordered a < b < c, deepest wins', 
   expect(css.indexOf('.sc-a{')).toBeLessThan(css.indexOf('.sc-b{'))
   expect(css.indexOf('.sc-b{')).toBeLessThan(css.indexOf('.sc-c{'))
 })
+
+describe('styled-components FOLD interop (untransformed .attrs/.withConfig over a descriptor)', () => {
+  // Real styled-components sees styledComponentId on the descriptor, takes its
+  // FOLDING path, and renders the descriptor's `target` directly — the
+  // descriptor is never element-created, so neither the JSX interception nor
+  // the forwardRef fallback runs. The descriptor's componentStyle shim must
+  // therefore hand SC our classes per render (regression: dynamic base styles
+  // were silently dropped).
+  const styled = require('styled-components').default
+
+  it('styled(DynamicDescriptor).attrs(...): base dynamic class resolves against props', () => {
+    const Stack = createStyled('div', { componentId: 'sc-fstack' })`display: flex; gap: ${p => (p.gap || 0) + 'px'};`
+    const Wrapped = styled(Stack).attrs(() => ({ 'data-att': 'yes' }))`padding: 4px;`
+
+    render(React.createElement(Wrapped, { gap: 8 }, 'x'))
+    const el = container.querySelector('div')
+    expect(el.getAttribute('data-att')).toBe('yes') // attrs applied by SC
+    expect(el.className).toContain('sc-fstack') // folded marker class
+    const js = (el.className.match(/js-[a-z0-9]+/) || [])[0]
+    expect(js).toBeTruthy() // OUR dynamic class, from the componentStyle shim
+    expect(getCss()).toContain('.' + js + '{display: flex; gap: 8px;}') // resolved vs props
+
+    // prop change -> new variant through the same shim
+    render(React.createElement(Wrapped, { gap: 2 }, 'x'))
+    const el2 = container.querySelector('div')
+    const js2 = (el2.className.match(/js-[a-z0-9]+/) || [])[0]
+    expect(getCss()).toContain('.' + js2 + '{display: flex; gap: 2px;}')
+  })
+
+  it('styled(StaticDescriptor).withConfig(...): base static rule registers in our sheet', () => {
+    const Base = createStyled('span', { componentId: 'sc-fstat', css: '.sc-fstat{color:teal;}' })``
+    const Wrapped = styled(Base).withConfig({ displayName: 'WS' })`font-weight: 600;`
+
+    render(React.createElement(Wrapped, null, 'y'))
+    const el = container.querySelector('span')
+    expect(el.className).toContain('sc-fstat')
+    expect(getCss()).toContain('.sc-fstat{color:teal;}') // registered via the shim
+  })
+})

@@ -1,7 +1,7 @@
 {
-  "name": "just-styled",
-  "version": "0.1.0",
-  "description": "Runtime for just-styled, the compile-time styled-components babel plugin",
+  "name": "@just-styled/runtime",
+  "version": "1.0.0",
+  "description": "Runtime sources for just-styled (published as part of the root just-styled package; consume via `just-styled` / `just-styled/runtime`)",
   "license": "MIT",
   "main": "src/index.js",
   "exports": {

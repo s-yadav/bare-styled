@@ -152,13 +152,18 @@ describe('createStyled descriptor shape', () => {
     const SCBase = styled.div`color: red;`
     expect(Object.getOwnPropertyDescriptor(SCBase, 'toString').writable).toBe(false)
 
+    SCBase.customStatic = 42
+
     const Wrapped = createStyled(SCBase, { componentId: 'sc-wrap' })`padding: 4px;`
     expect(String(Wrapped)).toBe('.sc-wrap') // own toString shadows the read-only one
     expect(Wrapped[IS_STYLED]).toBe(Wrapped)
     expect(Wrapped.componentId).toBe('sc-wrap')
-    // SC statics still visible through the link
-    expect(Wrapped.styledComponentId).toBe('sc-wrap') // own field wins
-    expect(Wrapped.attrs).toBe(SCBase.attrs) // inherited from the SC base
+    // own fold-contract fields shadow the base's (attrs/foldedComponentIds/componentStyle)
+    expect(Wrapped.styledComponentId).toBe('sc-wrap')
+    expect(Wrapped.attrs).toEqual([]) // OUR fold contract, not the base's attrs
+    expect(typeof Wrapped.componentStyle.generateAndInjectStyles).toBe('function')
+    // non-contract statics still flow through the proto link
+    expect(Wrapped.customStatic).toBe(42)
   })
 
   it('statics passthrough survives descriptor-over-descriptor chains', () => {

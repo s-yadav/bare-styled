@@ -55,6 +55,29 @@ function buildHostProps(props, className) {
   return next
 }
 
+// The descriptor's own style classes for these props: the componentId (marker
+// + static styles), plus the per-props hash class when dynamic. Shared by
+// resolveDescriptor and by the styled-components fold interop (the descriptor's
+// componentStyle shim — see createStyled), which needs exactly this and nothing
+// else of element resolution.
+function styleClassesFor(type, props) {
+  if (type.isStatic) {
+    // Styles never change: inject once under the componentId, which then doubles
+    // as the style class. No per-render resolve or hash. registerStatic dedups
+    // via a generation stamp on the descriptor (one property compare per render)
+    // that engine.__reset invalidates, so it correctly re-registers after a
+    // __resetSheet.
+    engine.registerStatic(type)
+    return type.componentId
+  }
+  // Prop-dependent: componentId is a marker (for `${Comp}` selectors); the
+  // hash class carries the resolved styles, hashed per component and injected
+  // into this component's group.
+  return (
+    type.componentId + ' ' + engine.classFor(type, engine.resolveParts(type.parts, props))
+  )
+}
+
 // Resolve a descriptor + props into { type, props } for the real element.
 // Exported so createStyled's forwardRef body can render even without the patch.
 //
@@ -63,21 +86,7 @@ function buildHostProps(props, className) {
 // group, so a base always precedes its extender. Nothing to reorder here.
 function resolveDescriptor(type, props) {
   const p = props || EMPTY
-  let styleClass = ''
-  if (type.isStatic) {
-    // Styles never change: inject once under the componentId, which then doubles
-    // as the style class. No per-render resolve or hash. registerStatic dedups
-    // via a generation stamp on the descriptor (one property compare per render)
-    // that engine.__reset invalidates, so it correctly re-registers after a
-    // __resetSheet.
-    engine.registerStatic(type)
-  } else {
-    // Prop-dependent: componentId is a marker (for `${Comp}` selectors); the
-    // hash class carries the resolved styles, hashed per component and injected
-    // into this component's group.
-    styleClass = ' ' + engine.classFor(type, engine.resolveParts(type.parts, p))
-  }
-  const className = type.componentId + styleClass + (p.className ? ' ' + p.className : '')
+  const className = styleClassesFor(type, p) + (p.className ? ' ' + p.className : '')
   const target = p.as || type.component
   if (typeof target === 'string') {
     return { type: target, props: buildHostProps(p, className) }
@@ -189,4 +198,5 @@ module.exports = {
   wrapJsxDev, // jsxDEV
   wrapCreateElement, // classic createElement (variadic)
   resolveDescriptor,
+  styleClassesFor, // styled-components fold interop (componentStyle shim)
 }
