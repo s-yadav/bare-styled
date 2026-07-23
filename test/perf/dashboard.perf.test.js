@@ -38,7 +38,13 @@ import path from 'path'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import plugin from '../../src/js-transform'
+import { fastTransform } from '../../src/fast-transform'
 import * as runtime from 'just-styled/runtime'
+
+// Which engine compiles the just-styled variant: 'babel' (default) or 'oxc'.
+// Lets the SAME runtime benchmark verify that oxc-compiled output performs
+// identically to babel-compiled output.
+const ENGINE = process.env.JS_ENGINE || 'babel'
 
 global.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -217,10 +223,20 @@ const SOURCE = `
 `
 
 function buildApp(useJustStyled) {
+  const filename = path.join(__dirname, (useJustStyled ? 'js' : 'sc') + '-dashboard.jsx')
+  let source = SOURCE
   const plugins = [require.resolve('@babel/plugin-transform-modules-commonjs')]
-  if (useJustStyled) plugins.unshift(plugin)
-  const { code } = transform(SOURCE, {
-    filename: path.join(__dirname, (useJustStyled ? 'js' : 'sc') + '-dashboard.jsx'),
+  if (useJustStyled) {
+    if (ENGINE === 'oxc') {
+      // oxc engine compiles the styled templates first; babel below only does
+      // JSX/modules — exactly the split the Vite plugin uses in production.
+      source = fastTransform(SOURCE, { filename }).code
+    } else {
+      plugins.unshift(plugin)
+    }
+  }
+  const { code } = transform(source, {
+    filename,
     babelrc: false,
     configFile: false,
     presets: [[require.resolve('@babel/preset-react'), { runtime: 'classic' }]],
@@ -287,7 +303,7 @@ test(`dashboard mount/re-render: styled-components vs just-styled (${ROWS} rows)
   const pct = (a, b) => (((a - b) / a) * 100).toFixed(0) + '%'
   // eslint-disable-next-line no-console
   console.log(
-    `\ndashboard: styled-components vs just-styled — ${ROWS} rows, cells=${MODE} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
+    `\ndashboard: styled-components vs just-styled[${ENGINE}] — ${ROWS} rows, cells=${MODE} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
     `\n                 mount      re-render` +
     `\n  styled-comp   ${sc.mount.toFixed(2).padStart(6)}     ${sc.update.toFixed(2).padStart(6)}` +
     `\n  just-styled   ${js.mount.toFixed(2).padStart(6)}     ${js.update.toFixed(2).padStart(6)}` +

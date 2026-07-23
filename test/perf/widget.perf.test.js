@@ -109,11 +109,20 @@ const SOURCE = `
 `
 
 // Compile the source either as plain styled-components or through just-styled.
+// JS_ENGINE=oxc compiles the just-styled variant with the fast engine instead
+// of the Babel plugin (verifies oxc output performs identically at runtime).
+const ENGINE = process.env.JS_ENGINE || 'babel'
+const { fastTransform } = require('../../src/fast-transform')
 function buildWidget(useJustStyled) {
+  const filename = path.join(__dirname, (useJustStyled ? 'js' : 'sc') + '-widget.jsx')
+  let source = SOURCE
   const plugins = [require.resolve('@babel/plugin-transform-modules-commonjs')]
-  if (useJustStyled) plugins.unshift(plugin)
-  const { code } = transform(SOURCE, {
-    filename: path.join(__dirname, (useJustStyled ? 'js' : 'sc') + '-widget.jsx'),
+  if (useJustStyled) {
+    if (ENGINE === 'oxc') source = fastTransform(SOURCE, { filename }).code
+    else plugins.unshift(plugin)
+  }
+  const { code } = transform(source, {
+    filename,
     babelrc: false,
     configFile: false,
     presets: [[require.resolve('@babel/preset-react'), { runtime: 'classic' }]],
@@ -179,7 +188,7 @@ test(`widget mount/re-render: styled-components vs just-styled (${ROWS}x${COLS})
   const pct = (a, b) => (((a - b) / a) * 100).toFixed(0) + '%'
   // eslint-disable-next-line no-console
   console.log(
-    `\njust-styled vs styled-components — widget ${ROWS}x${COLS}, tint=${TINT} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
+    `\njust-styled[${ENGINE}] vs styled-components — widget ${ROWS}x${COLS}, tint=${TINT} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
     `\n                 mount      re-render` +
     `\n  styled-comp   ${sc.mount.toFixed(2).padStart(6)}     ${sc.update.toFixed(2).padStart(6)}` +
     `\n  just-styled   ${js.mount.toFixed(2).padStart(6)}     ${js.update.toFixed(2).padStart(6)}` +

@@ -101,7 +101,7 @@
 
 <header class="hero">
   <div class="eyebrow">just-styled · performance report · July 2026</div>
-  <h1>Same styled-components API. No wrapper fiber. 19–54% faster.</h1>
+  <h1>Same styled-components API. No wrapper fiber. 21–64% faster.</h1>
   <p class="sub">just-styled reimplements the styled-components authoring model but resolves every
   styled component to a plain host element at JSX time, and compiles fully-static templates to
   finished CSS at build time. Benchmarked against real styled-components on identical source,
@@ -109,8 +109,8 @@
   <div class="meta">jsdom · production React 18 · median of 12–25 iterations · identical DOM trees both ways · styled-components 6.4</div>
   <div class="kpis">
     <div class="kpi"><div class="v">23%</div><div class="l">avg. faster mount</div></div>
-    <div class="kpi"><div class="v">45%</div><div class="l">avg. faster re-render</div></div>
-    <div class="kpi win"><div class="v">54%</div><div class="l">best re-render (high-cardinality dynamic)</div></div>
+    <div class="kpi"><div class="v">49%</div><div class="l">avg. faster re-render</div></div>
+    <div class="kpi win"><div class="v">64%</div><div class="l">best re-render (high-cardinality dynamic)</div></div>
     <div class="kpi win"><div class="v">9 / 9</div><div class="l">profiles won</div></div>
   </div>
 </header>
@@ -140,32 +140,34 @@ removes them entirely — the styled component is resolved <em>before</em> React
 
 <div class="grid2">
   <div class="card">
-    <h3>Fiber elimination <span class="tag">mount +19–29%</span></h3>
+    <h3>Fiber elimination <span class="tag">mount +21–28%</span></h3>
     <p>Descriptors are resolved in a wrapped automatic JSX runtime
     (<code>jsxImportSource: 'just-styled'</code>) — deterministic, no monkeypatching. Non-styled
     elements pay a single type check. The mount gain is flat across every profile and scale because
     it is purely structural: it's the wrapper fibers that are gone.</p>
   </div>
   <div class="card">
-    <h3>Static work moved off the render path <span class="tag">re-render +43–51% (static rows)</span></h3>
+    <h3>Static work moved off the render path <span class="tag">re-render +43–53% (static rows)</span></h3>
     <p>Templates provably static at build time ship as <b>finished CSS in the bundle</b> — zero runtime
     style work. Static-but-unprovable templates compile during <code>requestIdleCallback</code>.
     At render, a static element costs <b>one property compare</b>; styled-components still runs its
     full wrapper + style pipeline per element.</p>
   </div>
   <div class="card">
-    <h3>Aggressive build-time resolution <span class="tag">27% of prophecy fully precompiled</span></h3>
+    <h3>Aggressive build-time resolution <span class="tag">33% of prophecy fully precompiled</span></h3>
     <p>The precompiler resolves more than literals: module-const member chains
     (<code>${theme.border}</code>), same-file <code>${Component}</code> selectors (the componentId was
     just minted by the same pass), and same-file static <code>css``</code> fragments — inlined
-    recursively. These are the dominant patterns in real codebases.</p>
+    recursively. <code>.attrs(...)</code> / <code>.withConfig(...)</code> chains compile natively too
+    (attrs expressions stay live; styled-components semantics at render). Across prophecy's full
+    corpus: 4,044 components compiled, 1,326 shipped as finished CSS, all 58 attrs chains included.</p>
   </div>
   <div class="card">
     <h3>Stylis skipped for flat dynamic bodies <span class="tag">6.5× cheaper per new variant</span></h3>
     <p>A resolved body with no nesting / at-rules is already a valid rule: <code>.cls{body}</code> by
     string concat (206&nbsp;ns) instead of a stylis compile (1,345&nbsp;ns). Value-position interpolations —
     the common high-cardinality shape — all qualify. This flipped high-cardinality from the narrowest
-    profile to the widest (+54% re-render).</p>
+    profile to the widest (+59–64% re-render).</p>
   </div>
   <div class="card" style="grid-column: 1 / -1;">
     <h3>Other minor improvements</h3>
@@ -257,17 +259,17 @@ through the just-styled plugin + runtime. Both render the exact same DOM. Lower 
     <tr><th>Profile</th><th class="num">DOM nodes</th><th class="num">SC mount</th><th class="num">JS mount</th><th class="num">Δ mount</th><th class="num">SC re-render</th><th class="num">JS re-render</th><th class="num">Δ re-render</th></tr>
   </thead>
   <tbody>
-    <tr class="group"><td colspan="8">Widget — cards + table; every row carries two static cells (id/total columns) plus tint cells</td></tr>
-    <tr><td>60×5, few tints</td><td class="num">508</td><td class="num">8.84</td><td class="num">6.74</td><td class="num"><span class="delta">+24%</span></td><td class="num">4.67</td><td class="num">2.29</td><td class="num"><span class="delta">+51%</span></td></tr>
-    <tr><td>60×5, all static</td><td class="num">508</td><td class="num">8.95</td><td class="num">6.84</td><td class="num"><span class="delta">+24%</span></td><td class="num">4.58</td><td class="num">2.26</td><td class="num"><span class="delta">+51%</span></td></tr>
-    <tr><td>60×5, unique tint per cell</td><td class="num">508</td><td class="num">9.82</td><td class="num">6.98</td><td class="num"><span class="delta">+29%</span></td><td class="num">6.32</td><td class="num">3.53</td><td class="num"><span class="delta">+44%</span></td></tr>
-    <tr><td>200×8, few tints</td><td class="num">2,228</td><td class="num">38.65</td><td class="num">31.17</td><td class="num"><span class="delta">+19%</span></td><td class="num">22.29</td><td class="num">12.94</td><td class="num"><span class="delta">+42%</span></td></tr>
-    <tr><td>200×8, all static</td><td class="num">2,228</td><td class="num">39.50</td><td class="num">31.15</td><td class="num"><span class="delta">+21%</span></td><td class="num">22.53</td><td class="num">12.74</td><td class="num"><span class="delta">+43%</span></td></tr>
-    <tr><td>200×8, unique tint per cell</td><td class="num">2,228</td><td class="num">41.41</td><td class="num">30.53</td><td class="num"><span class="delta">+26%</span></td><td class="num">32.60</td><td class="num">14.86</td><td class="num"><span class="delta">+54%</span></td></tr>
+    <tr class="group"><td colspan="8">Widget — cards + table; every row carries two static cells (id/total columns) plus tint cells; includes a compiled .attrs input + keyframes dot</td></tr>
+    <tr><td>60×5, few tints</td><td class="num">508</td><td class="num">8.53</td><td class="num">6.76</td><td class="num"><span class="delta">+21%</span></td><td class="num">4.46</td><td class="num">2.30</td><td class="num"><span class="delta">+48%</span></td></tr>
+    <tr><td>60×5, all static</td><td class="num">508</td><td class="num">8.73</td><td class="num">6.72</td><td class="num"><span class="delta">+23%</span></td><td class="num">4.36</td><td class="num">2.26</td><td class="num"><span class="delta">+48%</span></td></tr>
+    <tr><td>60×5, unique tint per cell</td><td class="num">508</td><td class="num">8.90</td><td class="num">6.40</td><td class="num"><span class="delta">+28%</span></td><td class="num">6.26</td><td class="num">2.25</td><td class="num"><span class="delta">+64%</span></td></tr>
+    <tr><td>200×8, few tints</td><td class="num">2,228</td><td class="num">36.91</td><td class="num">29.22</td><td class="num"><span class="delta">+21%</span></td><td class="num">23.08</td><td class="num">12.31</td><td class="num"><span class="delta">+47%</span></td></tr>
+    <tr><td>200×8, all static</td><td class="num">2,228</td><td class="num">37.34</td><td class="num">28.73</td><td class="num"><span class="delta">+23%</span></td><td class="num">20.77</td><td class="num">11.79</td><td class="num"><span class="delta">+43%</span></td></tr>
+    <tr><td>200×8, unique tint per cell</td><td class="num">2,228</td><td class="num">41.30</td><td class="num">29.62</td><td class="num"><span class="delta">+28%</span></td><td class="num">31.43</td><td class="num">12.84</td><td class="num"><span class="delta">+59%</span></td></tr>
     <tr class="group"><td colspan="8">Dashboard — app chrome + sidebar + stat cards + 150-row table; cell mix selects the profile</td></tr>
-    <tr><td>150 rows, mixed cells (real-world)</td><td class="num">1,242</td><td class="num">23.07</td><td class="num">17.69</td><td class="num"><span class="delta">+23%</span></td><td class="num">11.95</td><td class="num">6.45</td><td class="num"><span class="delta">+46%</span></td></tr>
-    <tr><td>150 rows, all-static cells</td><td class="num">1,242</td><td class="num">22.24</td><td class="num">16.22</td><td class="num"><span class="delta">+27%</span></td><td class="num">10.05</td><td class="num">5.56</td><td class="num"><span class="delta">+45%</span></td></tr>
-    <tr><td>150 rows, all-dynamic cells</td><td class="num">1,242</td><td class="num">23.27</td><td class="num">18.76</td><td class="num"><span class="delta">+19%</span></td><td class="num">12.57</td><td class="num">7.89</td><td class="num"><span class="delta">+37%</span></td></tr>
+    <tr><td>150 rows, mixed cells (real-world)</td><td class="num">1,242</td><td class="num">20.76</td><td class="num">15.98</td><td class="num"><span class="delta">+23%</span></td><td class="num">10.54</td><td class="num">5.88</td><td class="num"><span class="delta">+44%</span></td></tr>
+    <tr><td>150 rows, all-static cells</td><td class="num">1,242</td><td class="num">20.64</td><td class="num">16.08</td><td class="num"><span class="delta">+22%</span></td><td class="num">9.40</td><td class="num">4.45</td><td class="num"><span class="delta">+53%</span></td></tr>
+    <tr><td>150 rows, all-dynamic cells</td><td class="num">1,242</td><td class="num">22.24</td><td class="num">17.39</td><td class="num"><span class="delta">+22%</span></td><td class="num">12.05</td><td class="num">7.55</td><td class="num"><span class="delta">+37%</span></td></tr>
   </tbody>
 </table>
 
@@ -301,6 +303,14 @@ through the just-styled plugin + runtime. Both render the exact same DOM. Lower 
     (<code>profiling/*/harness.html</code>) measure those with a full style+layout flush per
     render.</p>
   </div>
+  <div class="card">
+    <h3>The transform itself is cheap too</h3>
+    <p>Two build-time engines produce equivalent output (differential-tested on prophecy's full
+    corpus: 1,244 styled files, zero errors). The default oxc engine (oxc-parser + magic-string
+    surgical edits) transforms at <b>≈0.7–1.5 ms/file vs Babel's ≈5.4–5.8</b> — 3.6–8.5×
+    depending on filesystem — so the styled pass adds under two seconds to a cold build of the
+    whole app. Reproduce with <code>node profiling/transform-bench.mjs</code>.</p>
+  </div>
 </div>
 
 <h2><span class="no">06</span>Methodology &amp; caveats</h2>
@@ -323,10 +333,10 @@ const LABELS = [
   'widget 200×8 · few', 'widget 200×8 · static', 'widget 200×8 · unique',
   'dash 150r · mixed', 'dash 150r · static', 'dash 150r · dynamic'
 ];
-const JS = { mount: [6.74, 6.84, 6.98, 31.17, 31.15, 30.53, 17.69, 16.22, 18.76],
-             update: [2.29, 2.26, 3.53, 12.94, 12.74, 14.86, 6.45, 5.56, 7.89] };
-const SC = { mount: [8.84, 8.95, 9.82, 38.65, 39.50, 41.41, 23.07, 22.24, 23.27],
-             update: [4.67, 4.58, 6.32, 22.29, 22.53, 32.60, 11.95, 10.05, 12.57] };
+const JS = { mount: [6.76, 6.72, 6.40, 29.22, 28.73, 29.62, 15.98, 16.08, 17.39],
+             update: [2.30, 2.26, 2.25, 12.31, 11.79, 12.84, 5.88, 4.45, 7.55] };
+const SC = { mount: [8.53, 8.73, 8.90, 36.91, 37.34, 41.30, 20.76, 20.64, 22.24],
+             update: [4.46, 4.36, 6.26, 23.08, 20.77, 31.43, 10.54, 9.40, 12.05] };
 const dMount = SC.mount.map((s, i) => Math.round((s - JS.mount[i]) / s * 100));
 const dUpdate = SC.update.map((s, i) => Math.round((s - JS.update[i]) / s * 100));
 
@@ -365,7 +375,7 @@ new Chart(document.getElementById('deltaChart'), {
     plugins: { legend: { display: false },
       tooltip: { callbacks: { label: c => c.dataset.label + ': +' + c.parsed.x + '% faster' } } },
     scales: {
-      x: { grid: { color: '#eceef2' }, max: 60, ticks: { callback: v => '+' + v + '%' } },
+      x: { grid: { color: '#eceef2' }, max: 70, ticks: { callback: v => '+' + v + '%' } },
       y: { grid: { display: false } }
     }
   }
