@@ -11,7 +11,7 @@ const run = (code, opts = {}) =>
   }).code
 
 describe('js-transform (decoupled createStyled emit)', () => {
-  it('rewrites styled.tag, keeping interpolations live', () => {
+  it('rewrites styled.tag: statics resolved, value-position fns become skeleton vars', () => {
     const out = run(`
       import styled from 'styled-components'
       const theme = { bg: 'red' }
@@ -25,9 +25,10 @@ describe('js-transform (decoupled createStyled emit)', () => {
     expect(out).toMatch(/createStyled\)?\("div",\s*\{/)
     expect(out).toMatch(/componentId:\s*"sc-[a-z0-9]+-0"/)
     expect(out).toMatch(/displayName:\s*"Sample__Card"/)
-    // interpolations are STILL LIVE in the template (not resolved at compile)
-    expect(out).toMatch(/background:\s*\$\{theme\.bg\}|\$\{theme\.bg\}/)
-    expect(out).toContain('props => props.color')
+    // module const resolved at build; the prop fn becomes a var slot in a
+    // build-compiled skeleton (no stylis at render, ever)
+    expect(out).toMatch(/skeleton:\s*"\.__jsc__\{width:400px;background:red;color:var\(--js-0\);\}"/)
+    expect(out).toMatch(/vars:\s*\[props => props\.color\]/)
     // runtime imports injected
     expect(out).toMatch(/from ['"]just-styled\/runtime['"]/)
     expect(out).toMatch(/just-styled\/runtime\/patch/)

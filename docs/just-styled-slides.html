@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>just-styled — slides</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --navy: #16233B; --navy2: #1E2F52; --blue: #2A78D6; --blue-l: #E6F1FB;
+    --teal: #1D9E75; --teal-l: #E1F5EE; --coral: #D85A30; --coral-l: #FAECE7;
+    --ink: #1A1E26; --muted: #5A6472; --light: #F4F6FA; --line: #DDE3EC;
+    --code-bg: #0F172A; --code-grn: #7EE0B0; --code-yel: #F3D97E; --code-blu: #8FC1F2; --code-txt: #D7DEEA; --code-mut: #6B7A94;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #0B1220; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  /* ---- stage scaling ---- */
+  #viewport { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stage { width: 1280px; height: 720px; position: relative; transform-origin: center center; }
+
+  /* ---- slides ---- */
+  .slide {
+    position: absolute; inset: 0; padding: 56px 72px; background: #fff; border-radius: 10px;
+    opacity: 0; pointer-events: none; transform: translateX(40px);
+    transition: opacity .35s ease, transform .35s ease; overflow: hidden;
+  }
+  .slide.active { opacity: 1; pointer-events: auto; transform: translateX(0); }
+  .slide.dark { background: var(--navy); color: #fff; }
+
+  h1 { font-size: 30px; font-weight: 800; color: var(--navy); letter-spacing: -0.01em; }
+  .dark h1 { color: #fff; }
+  .sub { margin-top: 8px; font-size: 15px; color: var(--muted); }
+  .dark .sub { color: #CADCFC; }
+
+  /* ---- shared bits ---- */
+  .dots { display: flex; gap: 10px; }
+  .dot { width: 34px; height: 34px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 15px; display: flex; align-items: center; justify-content: center; }
+  .d1 { background: var(--blue); } .d2 { background: var(--teal); } .d3 { background: var(--coral); }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+  .codecard { background: var(--code-bg); border-radius: 12px; padding: 22px 24px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.75; color: var(--code-txt); white-space: pre; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; border-radius: 20px; padding: 4px 12px; }
+  .btn { cursor: pointer; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 8px 16px; font-size: 13.5px; font-weight: 600; color: var(--navy); }
+  .btn:hover { background: var(--light); }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .hint { font-size: 12px; color: var(--muted); font-style: italic; }
+  .dark .hint { color: #7A8BB0; }
+
+  /* ---- chrome ---- */
+  #progress { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--blue); border-radius: 0 2px 2px 0; transition: width .3s ease; z-index: 50; }
+  #counter { position: absolute; right: 20px; bottom: 12px; font-size: 12px; color: #93A1B8; z-index: 50; font-variant-numeric: tabular-nums; }
+  #navL, #navR { position: absolute; top: 50%; transform: translateY(-50%); z-index: 50; width: 40px; height: 40px; border-radius: 50%; border: none; background: rgba(120,135,160,.14); color: #8896AC; font-size: 18px; cursor: pointer; }
+  #navL { left: 10px; } #navR { right: 10px; }
+  #navL:hover, #navR:hover { background: rgba(120,135,160,.3); }
+
+  /* slide 2 live demo */
+  .demo-btn { border: none; border-radius: 6px; padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .25s, color .25s; }
+
+  /* slide 3 pipeline */
+  .pipe { display: flex; gap: 12px; }
+  .pipe .step { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 14px 12px; background: var(--light); transition: all .3s ease; opacity: .45; }
+  .pipe .step.on { opacity: 1; background: #fff; border-color: var(--blue); box-shadow: 0 4px 14px rgba(42,120,214,.18); transform: translateY(-4px); }
+  .pipe .step.fiber.on { border-color: var(--coral); box-shadow: 0 4px 14px rgba(216,90,48,.22); }
+  .pipe .n { font-weight: 800; font-size: 13px; color: var(--blue); }
+  .pipe .fiber .n { color: var(--coral); }
+  .pipe h4 { font-size: 13.5px; margin: 6px 0 4px; color: var(--navy); }
+  .pipe p { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+
+  /* slide 4 tree + slider */
+  .tree { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.8; }
+  .tree .w { color: var(--coral); font-weight: 700; }
+  .tree .h { color: var(--ink); }
+  .tree .cm { color: var(--muted); font-style: italic; }
+  input[type=range] { accent-color: var(--blue); }
+  .bigstat { font-size: 44px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+
+  /* slide 6 wrapper removal */
+  .ftree { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; line-height: 1.9; }
+  .ftree .row { transition: all .5s ease; overflow: hidden; max-height: 30px; }
+  .ftree .row.wrap { color: #F0A088; }
+  .gone .row.wrap { max-height: 0; opacity: 0; }
+  .ftree .row.host { color: #CADCFC; }
+
+  /* slide 10 meters */
+  .meter { height: 14px; border-radius: 7px; background: var(--light); overflow: hidden; }
+  .meter > div { height: 100%; width: 0; border-radius: 7px; transition: width 1s ease; }
+
+  kbd { font-family: ui-monospace, Menlo, monospace; background: rgba(120,135,160,.15); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="viewport"><div id="stage">
+
+<!-- ================= 1. TITLE ================= -->
+<section class="slide dark" data-n="1">
+  <div class="dots" style="margin-top:36px"><div class="dot d1">1</div><div class="dot d2">2</div><div class="dot d3">3</div></div>
+  <div style="font-size:84px;font-weight:800;margin-top:90px;letter-spacing:-0.02em">just-styled</div>
+  <div style="font-size:30px;color:#CADCFC;margin-top:10px">styled-components, <span style="color:#fff;font-weight:700">without components</span></div>
+  <div style="font-size:19px;color:#CADCFC;margin-top:40px">Same authoring API. Same styling semantics. <b style="color:#fff">Half the re-render cost.</b></div>
+  <div style="position:absolute;bottom:48px;left:72px;color:#7A8BB0;font-size:14px">Compile-time + load-time + render-time optimization of CSS-in-JS</div>
+  <div style="position:absolute;bottom:48px;right:72px" class="hint">navigate with <kbd>←</kbd> <kbd>→</kbd></div>
+</section>
+
+<!-- ================= 2. WHAT IS SC (live demo) ================= -->
+<section class="slide" data-n="2">
+  <h1>What is styled-components?</h1>
+  <div class="sub">The dominant CSS-in-JS library — and the styling layer of our entire app. <b>Try it — click the button.</b></div>
+  <div style="display:flex;gap:36px;margin-top:30px">
+    <div style="flex:1.15">
+      <div class="codecard" id="sc-demo-code" style="font-size:14px"></div>
+    </div>
+    <div style="flex:1">
+      <div class="card" style="padding:22px 26px;margin-bottom:18px;background:var(--light)">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">live render — click me</div>
+        <div style="margin:18px 0 10px"><button class="demo-btn" id="sc-demo-btn">Save</button></div>
+        <div class="mono" style="font-size:12px;color:var(--muted)" id="sc-demo-class"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="card" style="padding:14px 16px"><b style="color:var(--navy);font-size:14px">Styles live with components</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">real CSS, scoped by a generated class</div></div>
+        <div class="card" style="padding:14px 16px"><b style="color:var(--navy);font-size:14px">Dynamic by design</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">interpolations are functions of props</div></div>
+        <div class="card" style="padding:14px 16px"><b style="color:var(--navy);font-size:14px">Full CSS power</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">nesting, media queries, keyframes</div></div>
+        <div class="card" style="padding:14px 16px"><b style="color:var(--navy);font-size:14px">Everywhere here</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">~4,000 styled components in our app</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 3. HOW SC WORKS (step-through) ================= -->
+<section class="slide" data-n="3">
+  <h1>How styled-components works</h1>
+  <div class="sub">Every styled element is a real React component that computes its CSS during render. <b>Step through it →</b></div>
+  <div class="pipe" style="margin-top:34px" id="pipe">
+    <div class="step"><div class="n">1</div><h4>&lt;Button /&gt;</h4><p>element created by your JSX</p></div>
+    <div class="step fiber"><div class="n">2</div><h4>Wrapper renders</h4><p>a component FIBER per element</p></div>
+    <div class="step"><div class="n">3</div><h4>Context built</h4><p>props + theme + attrs merged</p></div>
+    <div class="step"><div class="n">4</div><h4>Template resolved</h4><p>every interpolation called</p></div>
+    <div class="step"><div class="n">5</div><h4>CSS serialized</h4><p>stylis parse + prefix + stringify</p></div>
+    <div class="step"><div class="n">6</div><h4>Class generated</h4><p>hash → inject rule → className</p></div>
+  </div>
+  <div class="card" style="margin-top:30px;padding:20px 26px;background:var(--blue-l);border-color:transparent;min-height:96px">
+    <div id="pipe-note" style="font-size:16px;color:var(--ink);line-height:1.55"></div>
+  </div>
+  <div style="margin-top:22px;display:flex;gap:12px;align-items:center">
+    <button class="btn primary" id="pipe-next">Next step</button>
+    <button class="btn" id="pipe-reset">Reset</button>
+    <span class="hint">…and then the real &lt;button&gt; renders as a second fiber underneath.</span>
+  </div>
+</section>
+
+<!-- ================= 4. COST 1: FIBERS (slider) ================= -->
+<section class="slide" data-n="4">
+  <h1>The cost, part 1: twice the fibers</h1>
+  <div class="sub">Every styled element puts TWO nodes in the React tree — the wrapper and the host. <b>Drag the slider.</b></div>
+  <div style="display:flex;gap:36px;margin-top:26px">
+    <div style="flex:1.05" class="card" >
+      <div style="padding:20px 26px">
+        <div class="tree">
+<div><span style="color:var(--coral);font-weight:700">styled-components</span></div>
+<div class="h">&lt;Table&gt;</div>
+<div>&nbsp;&nbsp;<span class="w">Styled(Row)</span> <span class="cm">← wrapper fiber</span></div>
+<div class="h">&nbsp;&nbsp;&nbsp;&nbsp;&lt;tr&gt;</div>
+<div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="w">Styled(Cell)</span> <span class="cm">← wrapper fiber</span></div>
+<div class="h">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;td&gt;</div>
+<div style="margin-top:14px"><span style="color:var(--teal);font-weight:700">just-styled</span></div>
+<div class="h">&lt;Table&gt;</div>
+<div class="h">&nbsp;&nbsp;&lt;tr&gt;</div>
+<div class="h">&nbsp;&nbsp;&nbsp;&nbsp;&lt;td&gt; <span style="color:var(--teal);font-style:italic">← host fibers only</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="flex:1">
+      <div style="display:flex;align-items:center;gap:14px">
+        <span style="font-size:14px;color:var(--muted);white-space:nowrap">table rows</span>
+        <input type="range" id="rows" min="10" max="500" value="150" step="10" style="flex:1">
+        <span class="mono" id="rows-out" style="font-weight:700;color:var(--navy);min-width:44px;text-align:right">150</span>
+      </div>
+      <div class="card" style="margin-top:18px;padding:20px 26px;display:flex;gap:26px;align-items:baseline">
+        <div><div class="bigstat" style="color:var(--coral)" id="fibers-sc">—</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px">fibers with styled-components</div></div>
+        <div style="font-size:26px;color:var(--muted)">vs</div>
+        <div><div class="bigstat" style="color:var(--teal)" id="fibers-js">—</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px">fibers with just-styled</div></div>
+      </div>
+      <div class="card" style="margin-top:14px;padding:16px 26px">
+        <div style="font-size:14px;color:var(--ink)"><b id="fibers-extra" style="color:var(--coral)">—</b> extra wrapper fibers — created on mount, <b>reconciled on every update</b>, rendering nothing of their own.</div>
+      </div>
+      <div class="hint" style="margin-top:12px">assumes ~8 styled elements per row + ~40 chrome elements (our dashboard's shape)</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5. COST 2: RENDER WORK ================= -->
+<section class="slide" data-n="5">
+  <h1>The cost, part 2: work on every render</h1>
+  <div class="sub">The style pipeline is JavaScript that runs while React is trying to paint your frame</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:28px">
+    <div class="card" style="padding:20px 24px;display:flex;gap:16px">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--coral-l);color:var(--coral);font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0" class="mono">hash</div>
+      <div><b style="color:var(--navy);font-size:16px">Class name generation</b><div style="font-size:13.5px;color:var(--muted);margin-top:5px">Resolve every interpolation, build the CSS string, MurmurHash it — per element, per render, before caching helps.</div></div>
+    </div>
+    <div class="card" style="padding:20px 24px;display:flex;gap:16px">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--coral-l);color:var(--coral);font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0" class="mono">css</div>
+      <div><b style="color:var(--navy);font-size:16px">Style parsing</b><div style="font-size:13.5px;color:var(--muted);margin-top:5px">Each new style variant runs a full stylis compile: parse, nest, prefix, serialize — ~1.3&nbsp;µs each.</div></div>
+    </div>
+    <div class="card" style="padding:20px 24px;display:flex;gap:16px">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--coral-l);color:var(--coral);font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0" class="mono">props</div>
+      <div><b style="color:var(--navy);font-size:16px">Context + prop filtering</b><div style="font-size:13.5px;color:var(--muted);margin-top:5px">Merge props/theme/attrs into an execution context; filter every prop through DOM-validity checks.</div></div>
+    </div>
+    <div class="card" style="padding:20px 24px;display:flex;gap:16px">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--coral-l);color:var(--coral);font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0" class="mono">fiber</div>
+      <div><b style="color:var(--navy);font-size:16px">Extra reconciliation</b><div style="font-size:13.5px;color:var(--muted);margin-top:5px">The wrapper fibers themselves: diffed on every parent re-render, hooks and context reads included.</div></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:22px;padding:16px 24px;background:var(--light);border-color:transparent">
+    <span style="font-size:15px;color:var(--ink)">A styled-heavy screen re-rendering at 60fps runs this pipeline <b id="work-mult">~72,000×</b> per second <span style="color:var(--muted)">(1,200 styled elements × 60 renders)</span> — none of it wrong, all of it at the most expensive possible time.</span>
+  </div>
+</section>
+
+<!-- ================= 6. THE IDEA (remove wrappers) ================= -->
+<section class="slide dark" data-n="6">
+  <h1>The just-styled idea</h1>
+  <div class="sub">Resolve the styled component before React ever sees it. <b style="color:#fff">Press the button.</b></div>
+  <div style="display:flex;gap:36px;margin-top:30px;align-items:flex-start">
+    <div style="flex:1">
+      <div style="background:var(--navy2);border-radius:12px;padding:22px 26px">
+        <div class="ftree" id="ftree">
+          <div class="row host">&lt;Dashboard&gt;</div>
+          <div class="row wrap">&nbsp;&nbsp;Styled(Card)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← wrapper</div>
+          <div class="row host">&nbsp;&nbsp;&nbsp;&nbsp;&lt;div&gt;</div>
+          <div class="row wrap">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Styled(Title)&nbsp;&nbsp;← wrapper</div>
+          <div class="row host">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;h3&gt;</div>
+          <div class="row wrap">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Styled(Badge)&nbsp;&nbsp;← wrapper</div>
+          <div class="row host">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;span&gt;</div>
+          <div class="row wrap">&nbsp;&nbsp;Styled(Row)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← wrapper</div>
+          <div class="row host">&nbsp;&nbsp;&nbsp;&nbsp;&lt;tr&gt;</div>
+        </div>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
+        <button class="btn primary" id="gone-btn">Remove the wrappers</button>
+        <span class="mono" id="gone-count" style="color:#CADCFC;font-size:13px">9 fibers</span>
+      </div>
+    </div>
+    <div style="flex:1">
+      <div style="background:var(--navy2);border-radius:12px;padding:20px 24px;margin-bottom:14px">
+        <b style="font-size:15px">How: the JSX runtime does it</b>
+        <div class="mono" style="font-size:12.5px;color:#CADCFC;margin-top:10px;line-height:1.8">jsxImportSource: 'just-styled'<br>jsx(StyledTd, props)<br>&nbsp;&nbsp;→ <span style="color:var(--code-grn)">jsx('td', {className:'sc-x js-y'})</span></div>
+      </div>
+      <div style="background:var(--navy2);border-radius:12px;padding:20px 24px;margin-bottom:14px">
+        <b style="font-size:15px">Unchanged, by construction</b>
+        <div style="font-size:13px;color:#CADCFC;margin-top:8px;line-height:1.6">Same hash-class model and cascade semantics, .attrs / .withConfig, keyframes, ${Component} selectors, compound components.</div>
+      </div>
+      <div style="background:var(--navy2);border-radius:12px;padding:20px 24px">
+        <b style="font-size:15px">Gone, by construction</b>
+        <div style="font-size:13px;color:#CADCFC;margin-top:8px;line-height:1.6">The wrapper component, its fiber, its hooks and context read — and every bit of style work that could happen earlier.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 7. THREE STAGES ================= -->
+<section class="slide" data-n="7">
+  <h1>Three-stage optimization</h1>
+  <div class="sub">Move every piece of styling work to the earliest moment it can possibly happen</div>
+  <div style="display:flex;gap:20px;margin-top:32px">
+    <div class="card" style="flex:1;padding:26px">
+      <div class="dot d1" style="width:44px;height:44px;font-size:18px">1</div>
+      <div style="font-size:20px;font-weight:700;color:var(--navy);margin-top:14px">Build time</div>
+      <div style="font-size:14px;color:var(--ink);margin-top:10px;line-height:1.55">Compile styled templates to descriptors; provably-static CSS ships <b>finished</b> in the bundle.</div>
+      <div class="tag" style="background:var(--blue-l);color:var(--blue);margin-top:16px">33% need zero runtime style work</div>
+    </div>
+    <div class="card" style="flex:1;padding:26px">
+      <div class="dot d2" style="width:44px;height:44px;font-size:18px">2</div>
+      <div style="font-size:20px;font-weight:700;color:var(--navy);margin-top:14px">Module load + idle</div>
+      <div style="font-size:14px;color:var(--ink);margin-top:10px;line-height:1.55">Flatten static parts once; decide cascade order; compile remaining static CSS during browser idle.</div>
+      <div class="tag" style="background:var(--teal-l);color:var(--teal);margin-top:16px">never blocks a frame</div>
+    </div>
+    <div class="card" style="flex:1;padding:26px">
+      <div class="dot d3" style="width:44px;height:44px;font-size:18px">3</div>
+      <div style="font-size:20px;font-weight:700;color:var(--navy);margin-top:14px">Render time</div>
+      <div style="font-size:14px;color:var(--ink);margin-top:10px;line-height:1.55">JSX runtime swaps descriptors for host elements. Static = one compare. Dynamic = cached class.</div>
+      <div class="tag" style="background:var(--coral-l);color:var(--coral);margin-top:16px">no wrapper fiber, minimal work</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 8. STAGE 1 (compile toggle) ================= -->
+<section class="slide" data-n="8">
+  <div style="display:flex;align-items:center;gap:14px"><div class="dot d1">1</div><h1>Build time — compile the styling away</h1></div>
+  <div style="display:flex;gap:36px;margin-top:26px">
+    <div style="flex:1.15">
+      <div class="codecard" id="compile-code" style="min-height:250px;font-size:13.5px"></div>
+      <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
+        <button class="btn primary" id="compile-btn">Compile ⚡</button>
+        <span class="hint" id="compile-hint">what the oxc engine does to this file, in ~1 ms</span>
+      </div>
+    </div>
+    <div style="flex:1">
+      <div class="card" style="padding:18px 22px;margin-bottom:14px;background:var(--light);border-color:transparent">
+        <b style="color:var(--blue);font-size:15px">oxc engine</b>
+        <div style="font-size:13px;color:var(--ink);margin-top:5px">Rust parser + surgical string edits, ≈1 ms per styled file. Babel engine as reference and automatic per-file fallback.</div>
+      </div>
+      <div class="card" style="padding:18px 22px;margin-bottom:14px;background:var(--light);border-color:transparent">
+        <b style="color:var(--blue);font-size:15px">1,326 of 4,044</b>
+        <div style="font-size:13px;color:var(--ink);margin-top:5px">of our styled components ship as finished CSS — zero runtime style work. Resolves theme constants, ${Component} selectors, css`` fragments, .attrs / .withConfig chains.</div>
+      </div>
+      <div class="card" style="padding:18px 22px;background:var(--light);border-color:transparent">
+        <b style="color:var(--blue);font-size:15px">Differential-tested</b>
+        <div style="font-size:13px;color:var(--ink);margin-top:5px">Both engines produce equivalent output on all 1,244 styled files; unknown patterns safely stay on styled-components.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 9. STAGE 2 ================= -->
+<section class="slide" data-n="9">
+  <div style="display:flex;align-items:center;gap:14px"><div class="dot d2">2</div><h1>Module load + idle — prepare once, off the critical path</h1></div>
+  <div style="margin-top:30px;display:flex;flex-direction:column;gap:16px">
+    <div class="card" style="padding:20px 26px;display:flex;gap:24px;align-items:center">
+      <b style="color:var(--navy);font-size:17px;width:230px;flex-shrink:0">Flatten once</b>
+      <div style="font-size:13.5px;color:var(--ink);flex:1">At definition, static template parts (module values, fragments, selectors) are baked into strings — only prop functions survive to render time.</div>
+      <span class="tag" style="background:var(--teal-l);color:var(--teal);flex-shrink:0">once per component, not per render</span>
+    </div>
+    <div class="card" style="padding:20px 26px;display:flex;gap:24px;align-items:center">
+      <b style="color:var(--navy);font-size:17px;width:230px;flex-shrink:0">Cascade decided up front</b>
+      <div style="font-size:13.5px;color:var(--ink);flex:1">Every component takes a definition-order group; the stylesheet keeps groups ordered — a base always precedes its extender, with no render-time ordering logic.</div>
+      <span class="tag" style="background:var(--teal-l);color:var(--teal);flex-shrink:0">styled(Button) beats Button, always</span>
+    </div>
+    <div class="card" style="padding:20px 26px;display:flex;gap:24px;align-items:center">
+      <b style="color:var(--navy);font-size:17px;width:230px;flex-shrink:0">Idle compilation</b>
+      <div style="font-size:13.5px;color:var(--ink);flex:1">Static components the build couldn't prove compile during <code>requestIdleCallback</code> — the browser's spare time — so first render just inserts a ready-made rule.</div>
+      <span class="tag" style="background:var(--teal-l);color:var(--teal);flex-shrink:0">never blocks a frame</span>
+    </div>
+  </div>
+  <div style="margin-top:26px" class="card">
+    <div style="padding:16px 26px">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">main thread, app startup</div>
+      <div style="display:flex;height:26px;border-radius:6px;overflow:hidden;font-size:10.5px;color:#fff;text-align:center;line-height:26px" class="mono">
+        <div style="width:34%;background:var(--navy)">module load — flatten + groups</div>
+        <div style="width:26%;background:var(--blue)">first render — insert rules</div>
+        <div style="width:12%;background:#B9C4D6;color:var(--navy)">idle</div>
+        <div style="width:16%;background:var(--teal)">idle → stylis compiles</div>
+        <div style="width:12%;background:#B9C4D6;color:var(--navy)">idle</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 10. STAGE 3 (meters) ================= -->
+<section class="slide" data-n="10">
+  <div style="display:flex;align-items:center;gap:14px"><div class="dot d3">3</div><h1>Render time — almost nothing left to do</h1></div>
+  <div style="display:flex;gap:20px;margin-top:30px">
+    <div class="card" style="flex:1;padding:24px">
+      <b style="color:var(--navy);font-size:17px">Static component</b>
+      <div class="tag mono" style="background:var(--teal-l);color:var(--teal);margin-top:10px">one property compare</div>
+      <div style="font-size:13.5px;color:var(--ink);margin-top:14px;line-height:1.55">Rule already exists under its componentId. The JSX runtime emits the host element with that class. That's the whole render path.</div>
+    </div>
+    <div class="card" style="flex:1;padding:24px">
+      <b style="color:var(--navy);font-size:17px">Dynamic component</b>
+      <div class="tag mono" style="background:var(--blue-l);color:var(--blue);margin-top:10px">cache hit = map lookup</div>
+      <div style="font-size:13.5px;color:var(--ink);margin-top:14px;line-height:1.55">Interpolations resolve against props; the result maps to a per-component cached class. Only a never-seen variant pays for an insert.</div>
+    </div>
+    <div class="card" style="flex:1;padding:24px">
+      <b style="color:var(--navy);font-size:17px">New dynamic variant</b>
+      <div class="tag mono" style="background:var(--coral-l);color:var(--coral);margin-top:10px">flat CSS skips stylis</div>
+      <div style="font-size:13.5px;color:var(--ink);margin-top:14px;line-height:1.55">Plain declaration bodies become a rule by string concat instead of a stylis compile:</div>
+      <div style="margin-top:14px">
+        <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)"><span>stylis compile</span><span class="mono">1,345 ns</span></div>
+        <div class="meter" style="margin:4px 0 10px"><div data-w="100%" style="background:var(--coral)"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)"><span>flat fast path</span><span class="mono">206 ns</span></div>
+        <div class="meter" style="margin-top:4px"><div data-w="15%" style="background:var(--teal)"></div></div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:26px;font-size:16px;font-weight:700;color:var(--navy);font-style:italic">And in every case: no wrapper fiber was created, diffed, or reconciled.</div>
+</section>
+
+<!-- ================= 11. RESULTS (chart) ================= -->
+<section class="slide" data-n="11">
+  <h1>Measured improvement vs styled-components</h1>
+  <div class="sub">Identical trees, production React, median of 12–25 runs — just-styled wins all nine profiles</div>
+  <div style="display:flex;gap:30px;margin-top:20px">
+    <div style="flex:1.6;position:relative;height:470px"><canvas id="chart"></canvas></div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:14px;justify-content:center">
+      <div class="card" style="padding:18px 24px;background:var(--light);border-color:transparent;display:flex;align-items:center;gap:18px">
+        <div class="bigstat" style="color:var(--blue);font-size:40px">+24%</div><div style="font-size:13.5px;color:var(--ink)">average mount</div>
+      </div>
+      <div class="card" style="padding:18px 24px;background:var(--light);border-color:transparent;display:flex;align-items:center;gap:18px">
+        <div class="bigstat" style="color:var(--teal);font-size:40px">+49%</div><div style="font-size:13.5px;color:var(--ink)">average re-render</div>
+      </div>
+      <div class="card" style="padding:18px 24px;background:var(--light);border-color:transparent;display:flex;align-items:center;gap:18px">
+        <div class="bigstat" style="color:var(--teal);font-size:40px">+61%</div><div style="font-size:13.5px;color:var(--ink)">best case: high-cardinality dynamic styles</div>
+      </div>
+      <div class="hint">medians of 3–4 runs · jsdom isolates JS/React cost — browser style recalc over a leaner sheet comes on top</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 12. READING ================= -->
+<section class="slide" data-n="12">
+  <h1>Reading the numbers</h1>
+  <div class="sub">Each part of the win traces back to a specific stage</div>
+  <div style="margin-top:28px;display:flex;flex-direction:column;gap:14px">
+    <div class="card" style="padding:18px 24px;display:flex;gap:20px;align-items:center">
+      <div class="dot d3" style="flex-shrink:0">3</div>
+      <b style="color:var(--navy);font-size:16px;width:330px;flex-shrink:0">Mount: flat +20–28% everywhere</b>
+      <div style="font-size:13.5px;color:var(--ink)">The structural win — wrapper fibers are gone. Scales with tree size; does not erode at 4,000+ nodes.</div>
+    </div>
+    <div class="card" style="padding:18px 24px;display:flex;gap:20px;align-items:center">
+      <div class="dot d1" style="flex-shrink:0">1</div>
+      <b style="color:var(--navy);font-size:16px;width:330px;flex-shrink:0">Static-heavy re-render: up to +50%</b>
+      <div style="font-size:13.5px;color:var(--ink)">A static element costs one property compare; styled-components still runs its full wrapper + pipeline per element.</div>
+    </div>
+    <div class="card" style="padding:18px 24px;display:flex;gap:20px;align-items:center">
+      <div class="dot d3" style="flex-shrink:0">3</div>
+      <b style="color:var(--navy);font-size:16px;width:330px;flex-shrink:0">High-cardinality dynamic: up to +61%</b>
+      <div style="font-size:13.5px;color:var(--ink)">Every new style variant skips stylis via the flat-body fast path; repeated variants are a map lookup.</div>
+    </div>
+    <div class="card" style="padding:18px 24px;display:flex;gap:20px;align-items:center">
+      <div class="dot d2" style="flex-shrink:0">2</div>
+      <b style="color:var(--navy);font-size:16px;width:330px;flex-shrink:0">All-dynamic floor: +37%</b>
+      <div style="font-size:13.5px;color:var(--ink)">Per-render resolution deliberately matches styled-components' own algorithm — the remaining edge is purely the fiber.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 13. DEMO ================= -->
+<section class="slide dark" data-n="13">
+  <div class="dots" style="margin-top:36px"><div class="dot d1">1</div><div class="dot d2">2</div><div class="dot d3">3</div></div>
+  <div style="font-size:64px;font-weight:800;margin-top:80px">Let's see it live</div>
+  <div style="font-size:24px;color:#CADCFC;margin-top:12px">Real-time impact on the application</div>
+  <div style="margin-top:44px;display:flex;flex-direction:column;gap:16px;font-size:17px">
+    <div><b>React DevTools</b> <span style="color:#CADCFC">— the wrapper components are simply gone from the tree</span></div>
+    <div><b>Interaction profiles</b> <span style="color:#CADCFC">— renders and updates on styled-heavy screens</span></div>
+    <div><b>The stylesheet</b> <span style="color:#CADCFC">— one &lt;style data-just-styled&gt;, finished rules, no churn</span></div>
+  </div>
+  <div class="mono" style="position:absolute;bottom:48px;left:72px;color:#7A8BB0;font-size:13px">docs/perf-report.html · JUST_STYLED_INTEGRATION.md · profiling/ harnesses</div>
+</section>
+
+<div id="progress"></div>
+<div id="counter"></div>
+</div></div>
+<button id="navL" aria-label="previous slide">←</button>
+<button id="navR" aria-label="next slide">→</button>
+
+<script>
+// ---------- slide engine ----------
+const slides = [...document.querySelectorAll('.slide')]
+let cur = Math.min(Math.max((parseInt(location.hash.slice(1)) || 1) - 1, 0), slides.length - 1)
+const onEnter = {} // n -> fn
+
+function show(i) {
+  cur = Math.min(Math.max(i, 0), slides.length - 1)
+  slides.forEach((s, j) => s.classList.toggle('active', j === cur))
+  document.getElementById('progress').style.width = ((cur + 1) / slides.length * 100) + '%'
+  document.getElementById('counter').textContent = (cur + 1) + ' / ' + slides.length
+  location.hash = cur + 1
+  const fn = onEnter[cur + 1]
+  if (fn) try { fn() } catch (e) {}
+}
+function next() { show(cur + 1) }
+function prev() { show(cur - 1) }
+
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); next() }
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev() }
+  else if (e.key === 'Home') show(0)
+  else if (e.key === 'End') show(slides.length - 1)
+})
+document.getElementById('navL').onclick = prev
+document.getElementById('navR').onclick = next
+
+// scale stage to viewport
+function fit() {
+  const s = Math.min(innerWidth / 1300, innerHeight / 740)
+  document.getElementById('stage').style.transform = 'scale(' + s + ')'
+}
+addEventListener('resize', fit); fit()
+
+// ---------- slide 2: live prop toggle ----------
+;(function () {
+  let primary = true
+  const btn = document.getElementById('sc-demo-btn')
+  const codeEl = document.getElementById('sc-demo-code')
+  const classEl = document.getElementById('sc-demo-class')
+  function render() {
+    btn.style.background = primary ? '#2A78D6' : '#E5E7EB'
+    btn.style.color = primary ? '#fff' : '#1A1E26'
+    const cls = primary ? 'sc-a1b2 hGx3F' : 'sc-a1b2 kPz9Q'
+    classEl.textContent = '<button class="' + cls + '">Save</button>'
+    codeEl.innerHTML =
+      '<span style="color:var(--code-blu)">const</span> Button = <span style="color:var(--code-blu)">styled.button</span><span style="color:var(--code-grn)">`</span>\n' +
+      '  padding: 8px 16px;\n  border-radius: 6px;\n' +
+      '  background: <span style="color:var(--code-yel)">${p =&gt; p.primary ? blue : gray}</span>;\n' +
+      '<span style="color:var(--code-grn)">`</span>\n\n' +
+      '<span style="color:var(--code-grn)">&lt;Button' + (primary ? ' <b style="color:#fff">primary</b>' : '') + '&gt;Save&lt;/Button&gt;</span>\n\n' +
+      '<span style="color:var(--code-mut)">// one template, ' + (primary ? 'variant A' : 'variant B') + ' — distinct class per resolved style</span>'
+  }
+  btn.onclick = () => { primary = !primary; render() }
+  render()
+})()
+
+// ---------- slide 3: pipeline step-through ----------
+;(function () {
+  const steps = [...document.querySelectorAll('#pipe .step')]
+  const notes = [
+    'Your JSX creates the element — so far, free.',
+    '<b style="color:var(--coral)">A wrapper component renders — this is the extra fiber.</b> It exists only to read the theme context and run the style pipeline; it renders nothing of its own.',
+    'Props, theme and attrs are merged into an execution context object — a fresh allocation per element, per render.',
+    'Every interpolation function in the template is called with that context.',
+    'The resolved CSS string goes through stylis: parse, nest, prefix, serialize.',
+    'The result is hashed to a class name; a new rule is injected if unseen. <b>All six steps ran inside your render.</b>',
+  ]
+  let i = -1
+  const note = document.getElementById('pipe-note')
+  function step() {
+    i += 1
+    if (i < steps.length) {
+      steps.forEach((s, j) => s.classList.toggle('on', j <= i))
+      note.innerHTML = notes[i]
+    } else {
+      steps.forEach(s => s.classList.remove('on'))
+      note.innerHTML = 'Click <b>Next step</b> to walk the pipeline again.'
+      i = -1
+    }
+  }
+  document.getElementById('pipe-next').onclick = step
+  document.getElementById('pipe-reset').onclick = () => { i = -1; steps.forEach(s => s.classList.remove('on')); note.innerHTML = start }
+  const start = 'Click <b>Next step</b> — each stage below runs per styled element, per render.'
+  note.innerHTML = start
+})()
+
+// ---------- slide 4: fiber slider ----------
+;(function () {
+  const rows = document.getElementById('rows')
+  function upd() {
+    const r = +rows.value
+    const styledEls = r * 8 + 40
+    const sc = styledEls * 2
+    const js = styledEls
+    document.getElementById('rows-out').textContent = r
+    document.getElementById('fibers-sc').textContent = sc.toLocaleString()
+    document.getElementById('fibers-js').textContent = js.toLocaleString()
+    document.getElementById('fibers-extra').textContent = (sc - js).toLocaleString()
+  }
+  rows.oninput = upd; upd()
+})()
+
+// ---------- slide 6: remove wrappers ----------
+;(function () {
+  const tree = document.getElementById('ftree')
+  const btn = document.getElementById('gone-btn')
+  const count = document.getElementById('gone-count')
+  let gone = false
+  btn.onclick = () => {
+    gone = !gone
+    tree.classList.toggle('gone', gone)
+    count.textContent = gone ? '5 fibers — wrappers gone' : '9 fibers'
+    btn.textContent = gone ? 'Put them back' : 'Remove the wrappers'
+    btn.classList.toggle('primary', !gone)
+  }
+})()
+
+// ---------- slide 8: compile toggle ----------
+;(function () {
+  const el = document.getElementById('compile-code')
+  const btn = document.getElementById('compile-btn')
+  const hint = document.getElementById('compile-hint')
+  const before =
+    '<span style="color:var(--code-mut)">// source — what you write</span>\n\n' +
+    '<span style="color:var(--code-blu)">const</span> Cell = <span style="color:var(--code-blu)">styled.td</span><span style="color:var(--code-grn)">`</span>\n' +
+    '  padding: 6px 12px;\n' +
+    '  border-top: 1px solid <span style="color:var(--code-yel)">${theme.border}</span>;\n' +
+    '  color: <span style="color:var(--code-yel)">${theme.fg}</span>;\n' +
+    '<span style="color:var(--code-grn)">`</span>'
+  const after =
+    '<span style="color:var(--code-mut)">// output — what ships (theme resolved,\n// CSS compiled, template gone)</span>\n\n' +
+    '<span style="color:var(--code-blu)">const</span> Cell = <span style="color:var(--code-blu)">createStyled</span>(<span style="color:var(--code-grn)">"td"</span>, {\n' +
+    '  componentId: <span style="color:var(--code-grn)">"sc-x1-4"</span>,\n' +
+    '  css: <span style="color:var(--code-grn)">".sc-x1-4{padding:6px 12px;\n    border-top:1px solid #e5e7eb;\n    color:#1f2937;}"</span>\n' +
+    '})<span style="color:var(--code-grn)">``</span>'
+  let compiled = false
+  function render() {
+    el.innerHTML = compiled ? after : before
+    btn.textContent = compiled ? 'Back to source' : 'Compile ⚡'
+    btn.classList.toggle('primary', !compiled)
+    hint.textContent = compiled ? 'runtime work left for this component: insert one finished rule' : 'what the oxc engine does to this file, in ~1 ms'
+  }
+  btn.onclick = () => { compiled = !compiled; render() }
+  render()
+})()
+
+// ---------- slide 10: meters animate on enter ----------
+onEnter[10] = () => {
+  document.querySelectorAll('#stage .meter > div').forEach(d => {
+    d.style.width = '0'
+    requestAnimationFrame(() => setTimeout(() => { d.style.width = d.dataset.w }, 120))
+  })
+}
+
+// ---------- slide 11: chart ----------
+let chartDone = false
+onEnter[11] = () => {
+  if (chartDone || typeof Chart === 'undefined') return
+  chartDone = true
+  const labels = ['widget few', 'widget static', 'widget unique', 'widget XL few', 'widget XL static', 'widget XL unique', 'dash mixed', 'dash static', 'dash dynamic']
+  new Chart(document.getElementById('chart'), {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: 'Mount faster (%)', data: [24, 24, 27, 20, 24, 28, 26, 23, 24], backgroundColor: '#2A78D6', borderRadius: 4, maxBarThickness: 14 },
+      { label: 'Re-render faster (%)', data: [49, 50, 60, 46, 45, 61, 42, 47, 37], backgroundColor: '#1D9E75', borderRadius: 4, maxBarThickness: 14 },
+    ]},
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 } } },
+        tooltip: { callbacks: { label: c => c.dataset.label.replace(' (%)', '') + ': +' + c.parsed.x + '%' } } },
+      scales: { x: { max: 70, grid: { color: '#ECEEF2' }, ticks: { callback: v => '+' + v + '%' } },
+                y: { grid: { display: false }, ticks: { font: { size: 12 } } } },
+    },
+  })
+}
+
+show(cur)
+</script>
+</body>
+</html>

@@ -71,10 +71,19 @@ jest moduleNameMapper and the profiling build scripts map by path.
   remain the documented limitation.
 - **Static tiers:** build-precompiled (`css:` in config — zero-interp, const
   members via custom resolver, same-file `${Component}` selectors, same-file
-  static css`` fragments, string/number `+`) → runtime-static (flatten via
-  SC's css() at definition; stylis in requestIdleCallback; insert on first
-  render) → dynamic (resolve per render → per-component hash class
-  `js-<hash(componentId+css)>`, cached on descriptor `_cache`/`_gen`).
+  static css`` fragments, string/number `+`) → **SKELETON** (`skeleton` +
+  `vars` in config: residual interpolations all in declaration-VALUE position;
+  stylis ran at BUILD over a `__jsc__` class token + `var(--js-N)` value
+  placeholders; render = fn calls → short joined-value cache key ('\x1f'
+  separated) → segment stitch, never stylis; non-fn vars substitute at
+  definition and zero-fn skeletons promote to fully static; brace-bearing
+  values renormalize through stylis for well-formedness) → runtime-static
+  (flatten via SC's css() at definition; stylis in requestIdleCallback) →
+  live/dynamic (block/selector-position residuals only: resolve per render →
+  per-component hash class, cached). Value-position classification lives in
+  the SHARED src/utils/value-positions.js scanner — both engines must keep
+  using it identically. Corpus: 81% of prophecy styled components (static +
+  skeleton) never run stylis at render.
 - **Sheet** (`packages/runtime/src/sheet.js`): group-ordered — every component
   takes a definition-order group (`engine.nextGroup()`); rules insert
   positionally at their group's end (Fenwick tree for O(log G) offsets), so

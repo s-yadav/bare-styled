@@ -12,44 +12,55 @@ const engine = require('./engine')
 // across duplicate runtime copies.
 const IS_STYLED = Symbol.for('just-styled')
 
-// Count of descriptor renders that went through the forwardRef fallback (i.e.
-// paid a wrapper fiber instead of being resolved at element creation). Should
-// stay 0 in a correctly wired app; see the warning inside createStyled.
+// Descriptor renders that paid a wrapper fiber (forwardRef fallback).
+// Should stay 0 in a correctly wired app.
 let fallbackRenders = 0
 
-// The plugin emits `createStyled(component, { componentId, displayName })`tpl``.
-// The tagged template's interpolations stay live; styled-components' css()
-// flattens the static half once here, and the engine resolves the rest per
-// render into a hash-class (styled-components' model) — but the descriptor is
-// resolved to a host element by the JSX runtime, so there is no wrapper fiber.
-//
-// styled(StyledComponent) is NOT folded: base and extender keep their own rules
-// (so each component's styles stay traceable to it in DevTools, like
-// styled-components). The extender wins the cascade through the sheet's group
-// ordering — groups are assigned in definition order (engine.nextGroup below),
-// and a base is always defined before its extender, so base rules precede
-// extender rules in the sheet regardless of render order.
+// The plugin emits `createStyled(component, { componentId, ... })`tpl``.
+// styled(StyledComponent) is NOT folded: base and extender keep their own
+// rules; the extender wins the cascade via sheet group ordering (groups are
+// assigned in definition order, and a base is defined before its extender).
 function createStyled(component, config) {
   const componentId = config.componentId
   const displayName = config.displayName
   const precompiled = config.css // build-time stylis-serialized rule for a fully-static template
   const ownAttrs = config.attrs || null // .attrs(objOrFn) chain, in application order
   const shouldForwardProp = config.shouldForwardProp // .withConfig custom prop filter
+  const forwardProps = config.forwardProps // .withConfig one-call prop shaping (props) => nextProps
+  const skeletonCfg = config.skeleton // build-compiled rule w/ __jsc__ + var(--js-N) tokens
+  const varsCfg = config.vars // live expressions, in placeholder order
   const tag = function (strings) {
     const interps = Array.prototype.slice.call(arguments, 1)
-    // A precompiled rule is static by definition; otherwise flatten the static
-    // half once and decide static-vs-dynamic from whether any function survives.
-    const parts = precompiled != null ? null : engine.cacheParts(strings, interps)
-    const isStatic = precompiled != null || engine.isStatic(parts)
 
-    // A non-precompiled static component still has a stylis compile to do on first
-    // render — queue it for idle precompilation so that work happens off the
-    // render critical path (see engine.queueStatic).
-    if (isStatic && precompiled == null) engine.queueStatic(componentId, parts)
+    // Resolution mode, decided once at definition: precompiled (rule ships
+    // finished) / skeleton (stylis ran at build; non-function vars substitute
+    // now, promoting to static if no fns remain) / live template.
+    let parts = null
+    let css = precompiled
+    let varFns = null
+    let segments = null
+    let isStatic
+    if (precompiled != null) {
+      isStatic = true
+    } else if (skeletonCfg != null) {
+      const sub = engine.substituteStaticVars(skeletonCfg, varsCfg || [])
+      if (sub.fns.length === 0) {
+        isStatic = true
+        css = sub.skeleton.split('__jsc__').join(componentId) // promote: finished rule
+      } else {
+        isStatic = false
+        varFns = sub.fns
+        segments = engine.parseSkeleton(sub.skeleton)
+      }
+    } else {
+      parts = engine.cacheParts(strings, interps)
+      isStatic = engine.isStatic(parts)
+      // Queue the remaining stylis compile for idle time, off the render path.
+      if (isStatic) engine.queueStatic(componentId, parts)
+    }
 
-    // Attrs across a descriptor chain apply base-first (extender overrides),
-    // matching styled-components' folded ordering. Precomputed here so the
-    // render path applies one flat list with zero chain walking.
+    // Chain attrs apply base-first (extender overrides), precomputed flat so
+    // the render path does zero chain walking.
     let attrsAll = null
     {
       const baseAll = component !== null && component !== undefined && component._attrsAll
@@ -57,24 +68,21 @@ function createStyled(component, config) {
       else if (baseAll) attrsAll = baseAll
       else if (ownAttrs) attrsAll = ownAttrs
     }
-    // Effective shouldForwardProp for the chain: extender's config wins, else
-    // inherit the base's (styled-components' folding semantics).
+    // Chain-effective shouldForwardProp / forwardProps: extender wins, else
+    // inherit the base's. forwardProps beats shouldForwardProp at resolution.
     const sfp =
       shouldForwardProp ||
       (component !== null && component !== undefined && component._sfp) ||
       undefined
+    const fwd =
+      forwardProps ||
+      (component !== null && component !== undefined && component._fwd) ||
+      undefined
 
-    // forwardRef so the descriptor is a valid element type and still renders
-    // correctly if it reaches React WITHOUT being intercepted at element
-    // creation. That should be rare: it means a wrapper fiber exists, which is
-    // exactly what just-styled removes. Known ways to get here:
-    //   - a file compiled without jsxImportSource 'just-styled' AND the
-    //     createElement patch failed to install (frozen ESM namespace);
-    //   - memo(StyledX) / lazy(...) — React unwraps those to the descriptor
-    //     internally, never re-entering element creation;
-    //   - a third-party lib creating elements via its own unpatched runtime.
-    // In dev this warns once per component so misses are visible instead of
-    // silently costing a fiber; __getFallbackRenders() counts every hit.
+    // forwardRef fallback: renders correctly if the descriptor reaches React
+    // without being intercepted at element creation (unwrapped runtime,
+    // memo()/lazy() unwrapping internally, third-party createElement) — at the
+    // cost of a wrapper fiber. Warns once per component in dev.
     const element = React.forwardRef(function JustStyled(props, ref) {
       fallbackRenders++
       if (
@@ -104,33 +112,26 @@ function createStyled(component, config) {
     element.styledComponentId = componentId // component-selector target
     element.group = engine.nextGroup() // definition order -> sheet cascade order
     element.parts = parts
-    element.css = precompiled
+    element.css = css
+    element._varFns = varFns // skeleton mode: render-time value fns (placeholder order)
+    element._segments = segments // skeleton mode: precompiled rule segments
     element.isStatic = isStatic
     element.target = component
     element._attrsAll = attrsAll // base-first flat attrs list (null when none)
     element._sfp = sfp // effective shouldForwardProp for the chain
+    element._fwd = fwd // effective forwardProps for the chain (wins over _sfp)
     if (displayName) element.displayName = displayName
     element.toString = function () {
       return '.' + componentId
     }
 
-    // styled-components FOLD interop. An untransformed chain over this
-    // descriptor — styled(Stack).attrs(...)`` / .withConfig(...) — runs on real
-    // styled-components, which sees styledComponentId, takes its FOLDING path,
-    // and renders `target` directly: the descriptor is never created as an
-    // element, so neither the JSX interception nor the forwardRef fallback can
-    // resolve its styles. Instead SC reads the base's styles from
-    // `componentStyle.generateAndInjectStyles(executionContext, ...)` per
-    // render (and prepends `foldedComponentIds` + merges `attrs`). This shim
-    // routes that call into OUR engine: static rules register under the
-    // componentId, dynamic interpolations resolve against SC's merged
-    // execution context (props + theme + attrs) into our hash class — the
-    // rules live in the just-styled sheet, SC only carries the class names.
-    // (Cross-sheet cascade ties with the SC wrapper's own rules remain the
-    // documented limitation.)
-    // element.attrs is the REAL base-first list so a folding SC applies our
-    // attrs itself with its own execution context (theme included) — the shim
-    // then receives the post-attrs context and must not re-apply them.
+    // styled-components FOLD interop: an untransformed styled(Descriptor)
+    // chain runs on real SC, which sees styledComponentId, folds, and never
+    // element-creates the descriptor — it reads styles via
+    // componentStyle.generateAndInjectStyles instead. This shim routes that
+    // into our engine. element.attrs is the REAL base-first list so a folding
+    // SC applies our attrs itself (theme included); the shim then receives the
+    // post-attrs context and must not re-apply them.
     element.attrs = attrsAll || []
     element.foldedComponentIds = []
     if (sfp) element.shouldForwardProp = sfp
@@ -142,19 +143,11 @@ function createStyled(component, config) {
       },
     }
 
-    // Statics passthrough: `styled(Dropdown)` must still expose `Dropdown.Item`
-    // (compound components), custom statics, defaultProps, etc.
-    // styled-components does this by COPYING non-React statics
-    // (hoist-non-react-statics) with an exclusion list for its own internals; a
-    // prototype link gives the same property-access semantics with no copy and
-    // no collision risk — every field assigned above is an OWN property that
-    // shadows the base, and anything else falls through the chain (including
-    // through styled(styled(X)) descriptor chains). ORDER MATTERS: the link
-    // must come AFTER the own-field assignments — real styled-components v6
-    // components carry a NON-WRITABLE `toString`, and in strict mode assigning
-    // through a prototype chain that holds a read-only property throws
-    // ("Cannot assign to read only property 'toString'"). With the fields
-    // already own, the proto swap can't interfere. String tags have no statics.
+    // Statics passthrough: styled(Dropdown) must still expose Dropdown.Item
+    // etc. — a prototype link instead of hoist-non-react-statics copying.
+    // ORDER MATTERS: the link must come AFTER the own-field assignments — SC v6
+    // components carry a NON-WRITABLE toString, and assigning through a proto
+    // chain holding a read-only property throws in strict mode.
     if (component !== null && (typeof component === 'object' || typeof component === 'function')) {
       try {
         Object.setPrototypeOf(element, component)
@@ -166,10 +159,9 @@ function createStyled(component, config) {
     return element
   }
 
-  // Chainable factory, so runtime-level (untransformed) usage supports the
-  // full authoring surface: createStyled(C, cfg).attrs(a).withConfig(w)`...`.
-  // Each link returns a NEW factory with accumulated config; ids/groups are
-  // only consumed when the template is finally applied.
+  // Chainable factory: .attrs(a).withConfig(w)`...`. Each link returns a NEW
+  // factory with accumulated config; ids/groups are consumed only when the
+  // template is finally applied.
   tag.attrs = function (attrDef) {
     return createStyled(
       component,
@@ -182,6 +174,7 @@ function createStyled(component, config) {
       if (cfg.componentId) next.componentId = cfg.componentId
       if (cfg.displayName) next.displayName = cfg.displayName
       if (cfg.shouldForwardProp) next.shouldForwardProp = cfg.shouldForwardProp
+      if (cfg.forwardProps) next.forwardProps = cfg.forwardProps
     }
     return createStyled(component, next)
   }
@@ -191,15 +184,12 @@ function createStyled(component, config) {
 module.exports = {
   IS_STYLED,
   createStyled,
-  // Root createElement for the automatic runtime's key-after-spread fallback
-  // (imported from the import-source root), wrapped to resolve descriptors.
+  // Root createElement for the automatic runtime's key-after-spread fallback.
   createElement: patchImpl.wrapCreateElement(React.createElement),
   Fragment: React.Fragment,
   getCss: sheet.getCss,
   renderStaticStyles: sheet.renderStaticStyles,
-  // Vendor prefixing is opt-in (styled-components v6 parity). Call once at
-  // startup; pair with the babel plugin's `vendorPrefixes: true` so build-time
-  // precompiled rules match.
+  // Opt-in (SC v6 parity); pair with the plugin's `vendorPrefixes: true`.
   setVendorPrefixes: engine.setVendorPrefixes,
   __resetSheet: function () {
     sheet.__resetSheet()
@@ -207,8 +197,7 @@ module.exports = {
   },
   installCreateElementPatch: patchImpl.installCreateElementPatch,
   uninstallCreateElementPatch: patchImpl.uninstallCreateElementPatch,
-  // Diagnostics: how many descriptor renders paid a wrapper fiber (forwardRef
-  // fallback). 0 = every styled element was resolved at creation, as intended.
+  // Diagnostics: descriptor renders that paid a wrapper fiber. Should be 0.
   __getFallbackRenders: function () {
     return fallbackRenders
   },

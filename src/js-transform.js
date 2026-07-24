@@ -1,25 +1,15 @@
-// just-styled transform (decoupled).
-//
-// The compile step's only job now: rewrite a `styled` tagged template into a
-// `createStyled(component, { componentId, displayName })`...`` call, keeping the
-// template's interpolations LIVE so the runtime can resolve them on first
-// render. All CSS analysis (minify, static extraction, stylis) moved to the
-// runtime `flatten`, so this plugin no longer forks babel-plugin-styled-
-// components' heavy machinery — it just detects the styled form, generates a
-// stable componentId + displayName, and injects the runtime import.
-//
-// The simple forms compile — `styled.tag`, `styled('tag')`, `styled(Ident)` —
-// including `.attrs(...)` / `.withConfig({ componentId, displayName,
-// shouldForwardProp })` chains (attrs expressions stay live; the runtime
-// applies them per render with styled-components semantics). The helpers
-// (`css`, `keyframes`, `createGlobalStyle`), css-prop, unknown withConfig
-// options and exotic tag shapes are left untouched and render through real
-// styled-components.
+// just-styled babel transform: rewrite a `styled` tagged template into a
+// `createStyled(component, config)`...`` call, precompiling what it can
+// (static/skeleton) and keeping the rest live. Simple forms compile —
+// styled.tag / styled('tag') / styled(Ident) plus .attrs/.withConfig chains;
+// helpers (css, keyframes, createGlobalStyle), css-prop, unknown withConfig
+// options and exotic shapes stay untouched on real styled-components.
 import syntax from '@babel/plugin-syntax-jsx'
 import path from 'path'
 import { addNamed, addSideEffect } from '@babel/helper-module-imports'
 import { compile, serialize, stringify, middleware, prefixer } from 'stylis'
 import { isStyled, isCSSHelper } from './utils/detectors'
+import { createScanner } from './utils/value-positions'
 import getName from './utils/getName'
 import prefixLeadingDigit from './utils/prefixDigit'
 import { getFileHash } from './utils/fileHash'
@@ -49,13 +39,9 @@ const unwrapTsWrappers = node => {
   return node
 }
 
-// Parse a full `styled...` tag chain: the innermost simple form plus any
-// `.attrs(expr)` / `.withConfig({ ... })` links, in any order. Returns
-// { componentNode, attrs (application order), componentId?, displayName?,
-// shouldForwardProp? } or null to leave the template untouched (unknown
-// withConfig keys, non-literal componentId/displayName, multiple withConfig —
-// those still run on real styled-components). Kept strict and IDENTICAL to
-// the fast engine's rules so both engines transform the same set.
+// Parse a `styled...` chain (simple form + .attrs/.withConfig links). Returns
+// the parsed config or null to leave the template untouched. Bail rules kept
+// strict and IDENTICAL to the fast engine's so both transform the same set.
 const parseChain = (t, tagIn) => {
   let tag = unwrapTsWrappers(tagIn)
   const attrs = [] // collected outer-first, reversed below
@@ -83,6 +69,7 @@ const parseChain = (t, tagIn) => {
   let componentId
   let displayName
   let shouldForwardProp
+  let forwardProps
   if (withConfig) {
     for (const prop of withConfig.properties) {
       if (!t.isObjectProperty(prop) || prop.computed) return null
@@ -99,18 +86,29 @@ const parseChain = (t, tagIn) => {
         displayName = prop.value.value
       } else if (key === 'shouldForwardProp') {
         shouldForwardProp = prop.value
+      } else if (key === 'forwardProps') {
+        // just-styled extension: one call shaping all element props
+        forwardProps = prop.value
       } else {
         return null // unknown withConfig option -> real styled-components
       }
     }
   }
   attrs.reverse() // AST is outermost-first; application order is chain order
-  return { componentNode, attrs, componentId, displayName, shouldForwardProp }
+  return { componentNode, attrs, componentId, displayName, shouldForwardProp, forwardProps }
 }
 
-// Reject anything that isn't exactly `styled.tag`, `styled('tag')`, or
-// `styled(Ident)`. Returns the component node (a string literal for native
-// tags, a cloned identifier for component refs) or null to leave the node be.
+// A non-computed identifier chain: Dropdown.Item, A.B.C.
+const isSimpleMemberChain = (t, node) => {
+  while (t.isMemberExpression(node) && !node.computed && t.isIdentifier(node.property)) {
+    node = node.object
+  }
+  return t.isIdentifier(node)
+}
+
+// Reject anything that isn't `styled.tag`, `styled('tag')`, `styled(Ident)`,
+// or `styled(Compound.Member)` (TS wrappers around the argument — e.g.
+// `styled(Tree<T>)` — are unwrapped). Returns the component node or null.
 const parseSimpleTag = (t, tag) => {
   // styled.div
   if (
@@ -121,15 +119,16 @@ const parseSimpleTag = (t, tag) => {
   ) {
     return t.stringLiteral(tag.property.name)
   }
-  // styled('div') | styled(Component)
+  // styled('div') | styled(Component) | styled(Compound.Member) | styled(Comp<T>)
   if (
     t.isCallExpression(tag) &&
     t.isIdentifier(tag.callee) &&
     tag.arguments.length === 1
   ) {
-    const arg = tag.arguments[0]
+    const arg = unwrapTsWrappers(tag.arguments[0])
     if (t.isStringLiteral(arg)) return t.stringLiteral(arg.value)
     if (t.isIdentifier(arg)) return t.cloneNode(arg, true)
+    if (isSimpleMemberChain(t, arg)) return t.cloneNode(arg, true)
   }
   return null
 }
@@ -186,13 +185,9 @@ const resolveMember = (t, exprPath) => {
   return lit.ok ? { confident: true, value: lit.value } : { confident: false }
 }
 
-// Statically resolve one interpolation. Babel's evaluate() covers literals, const
-// identifiers, string concat and conditionals of consts; resolveMember covers
-// member access into const objects; same-file `${Component}` selectors resolve to
-// the componentId marker the plugin just minted (matching the runtime's
-// descriptor toString), and same-file fully-static css`` fragments inline to
-// their raw text (matching the runtime's flatten-then-join). Anything else
-// (prop functions, dynamic fragments, cross-module imports) stays unresolved.
+// Statically resolve one interpolation: babel evaluate(), member access into
+// const objects, same-file `${Component}` selectors (-> componentId marker),
+// same-file static css`` fragments (inlined). Anything else stays unresolved.
 const staticValue = (t, exprPath, state, depth) => {
   const ev = exprPath.evaluate()
   if (ev.confident) return { confident: true, value: ev.value }
@@ -200,15 +195,12 @@ const staticValue = (t, exprPath, state, depth) => {
   if (t.isIdentifier(exprPath.node) && depth < MAX_STATIC_DEPTH) {
     const binding = exprPath.scope.getBinding(exprPath.node.name)
     if (binding && binding.constant && binding.path.isVariableDeclarator()) {
-      // ${Component}: a styled component this plugin already transformed in
-      // this file -> `.componentId` selector, exactly what the runtime's css()
-      // flatten produces from the descriptor's toString.
+      // ${Component} already transformed in this file -> `.componentId`
+      // selector (matches the runtime descriptor's toString).
       const ids = state.file.get(STYLED_IDS)
       const componentId = ids && ids.get(binding.path.node)
       if (componentId) return { confident: true, value: '.' + componentId }
-      // ${fragment}: a same-file css`` fragment whose own template is fully
-      // static -> inline its raw text (the runtime flattens it to strings and
-      // joins them). Dynamic fragments bail and stay live.
+      // Same-file fully-static css`` fragment -> inline its raw text.
       const init = binding.path.node.init
       if (
         t.isTaggedTemplateExpression(init) &&
@@ -222,20 +214,15 @@ const staticValue = (t, exprPath, state, depth) => {
   return { confident: false }
 }
 
-// The raw CSS body of a tagged-template path if it is fully static after
-// resolving module constants — i.e. every interpolation resolves to a
-// string/number (or a falsy value we drop, matching the runtime). Returns null
-// if anything is dynamic, so the template is left live for the runtime to
-// resolve. Zero-interpolation templates are the trivial case. Also used
-// recursively (via staticValue) to inline same-file css`` fragments.
+// Raw CSS body of a template if fully static (every interpolation resolves to
+// string/number, or a falsy value we drop like the runtime does); null if
+// anything is dynamic. Also used recursively to inline css`` fragments.
 const staticRawOfTemplate = (t, path, state, depth) => {
   const quasi = path.node.quasi
   const quasis = quasi.quasis
   const exprs = quasi.expressions
-  // A quasi containing an invalid JS escape (e.g. content:'\2022' — CSS escapes
-  // need a doubled backslash in a template) has a nullish `cooked` (babel uses
-  // null, ESTree undefined). Bail to the live template rather than silently
-  // dropping that chunk of CSS.
+  // Invalid JS escape (e.g. content:'\2022') -> nullish cooked; bail to live
+  // rather than silently dropping that chunk of CSS.
   for (let i = 0; i < quasis.length; i++) {
     if (quasis[i].value.cooked == null) return null
   }
@@ -257,6 +244,48 @@ const staticRawOfTemplate = (t, path, state, depth) => {
 }
 
 const tryStaticRaw = (t, path, state) => staticRawOfTemplate(t, path, state, 0)
+
+// Template analysis. Outcomes: 'static' (all resolved — precompile whole
+// rule), 'skeleton' (residuals only in declaration VALUE slots -> var(--js-N)
+// placeholders; structure fixed, stylis runs at build), 'live' (residual in
+// block/selector position — structure can change per render).
+const analyzeTemplate = (t, path, state) => {
+  const quasi = path.node.quasi
+  const quasis = quasi.quasis
+  const exprs = quasi.expressions
+  for (let i = 0; i < quasis.length; i++) {
+    if (quasis[i].value.cooked == null) return { kind: 'live' } // invalid escape
+  }
+  const exprPaths = exprs.length ? path.get('quasi.expressions') : []
+  const scanner = createScanner()
+  let raw = (quasis[0] && quasis[0].value.cooked) || ''
+  scanner.feed(raw)
+  const vars = []
+  for (let i = 0; i < exprs.length; i++) {
+    const r = staticValue(t, exprPaths[i], state, 0)
+    if (r.confident) {
+      const v = r.value
+      let piece
+      if (typeof v === 'string') piece = v
+      else if (typeof v === 'number') piece = String(v)
+      else if (v === false || v === null || v === undefined || v === '') piece = ''
+      else return { kind: 'live' } // object/array/true -> match runtime semantics
+      raw += piece
+      scanner.feed(piece)
+    } else if (scanner.inValue()) {
+      raw += 'var(--js-' + vars.length + ')'
+      vars.push(exprPaths[i].node)
+      // a value token was emitted; scanner state stays "in value"
+    } else {
+      return { kind: 'live' } // block/selector-position residual
+    }
+    const nxt = (quasis[i + 1] && quasis[i + 1].value.cooked) || ''
+    raw += nxt
+    scanner.feed(nxt)
+  }
+  if (vars.length === 0) return { kind: 'static', raw }
+  return { kind: 'skeleton', raw, vars }
+}
 
 const getBlockName = (file, meaningless) => {
   const name = path.basename(file.opts.filename, path.extname(file.opts.filename))
@@ -291,16 +320,13 @@ export default function ({ types: t }) {
         if (!isStyled(t)(tag, state)) return
         const parsed = parseChain(t, tag)
         if (!parsed) return // helpers / exotic shapes / unknown withConfig -> untouched
-        const { componentNode, attrs, shouldForwardProp } = parsed
+        const { componentNode, attrs, shouldForwardProp, forwardProps } = parsed
 
-        // withConfig componentId wins over the minted one (styled-components
-        // semantics); minting only happens when actually needed so positions
-        // stay stable.
+        // withConfig componentId wins over the minted one (SC semantics).
         const componentId = parsed.componentId || nextComponentId(state)
 
-        // Record `const Name = styled...` -> componentId (keyed by the
-        // declarator node, so shadowing can't confuse the lookup). Later
-        // templates in this file can then resolve `${Name}` at build time.
+        // Record `const Name = styled...` -> componentId (keyed by declarator
+        // node so shadowing can't confuse later `${Name}` resolution).
         if (
           path.parentPath.isVariableDeclarator() &&
           t.isIdentifier(path.parentPath.node.id)
@@ -327,9 +353,8 @@ export default function ({ types: t }) {
             )
           }
         }
-        // .attrs(...) chain: the expressions stay LIVE (evaluated at module
-        // scope inside the config), in application order; the runtime applies
-        // them per render with styled-components semantics.
+        // attrs expressions stay LIVE, in application order; the runtime
+        // applies them per render.
         if (attrs.length) {
           configProps.push(
             t.objectProperty(
@@ -346,25 +371,31 @@ export default function ({ types: t }) {
             )
           )
         }
-
-        // Build-time precompile: a template that is fully static after resolving
-        // module constants (zero interpolations, or interpolations that are all
-        // literals / const members / same-file `${Component}` selectors /
-        // same-file static css`` fragments) is compiled with stylis at BUILD
-        // time and the finished rule emitted as `css` (registered under the
-        // componentId at runtime — no runtime css()/stylis), dropping the live
-        // template body. Works for any base (native tag or styled(Ident)); a
-        // styled(Ident) extender's own rule is independent of its base, and the
-        // sheet's group ordering (definition order) puts base rules before
-        // extender rules, so no folding is needed. Vendor prefixing is opt-in
-        // (SC v6 parity).
-        const raw = tryStaticRaw(t, path, state)
-        if (raw != null) {
-          const compiled = serialize(
-            compile('.' + componentId + '{' + raw + '}'),
-            middleware(useVendorPrefixes(state) ? [prefixer, stringify] : [stringify])
+        if (forwardProps) {
+          configProps.push(
+            t.objectProperty(t.identifier('forwardProps'), t.cloneNode(forwardProps, true))
           )
+        }
+
+        // Build-time compilation (vendor prefixing opt-in, SC v6 parity):
+        // static ships a finished `css` rule; skeleton runs stylis HERE over a
+        // .__jsc__ token and ships `skeleton` + `vars` (live expressions in
+        // placeholder order); live keeps the template for the runtime flatten.
+        const mw = middleware(useVendorPrefixes(state) ? [prefixer, stringify] : [stringify])
+        const analysis = analyzeTemplate(t, path, state)
+        if (analysis.kind === 'static') {
+          const compiled = serialize(compile('.' + componentId + '{' + analysis.raw + '}'), mw)
           configProps.push(t.objectProperty(t.identifier('css'), t.stringLiteral(compiled)))
+          path.node.quasi = t.templateLiteral([t.templateElement({ raw: '', cooked: '' })], [])
+        } else if (analysis.kind === 'skeleton') {
+          const compiled = serialize(compile('.__jsc__{' + analysis.raw + '}'), mw)
+          configProps.push(t.objectProperty(t.identifier('skeleton'), t.stringLiteral(compiled)))
+          configProps.push(
+            t.objectProperty(
+              t.identifier('vars'),
+              t.arrayExpression(analysis.vars.map(v => t.cloneNode(v, true)))
+            )
+          )
           path.node.quasi = t.templateLiteral([t.templateElement({ raw: '', cooked: '' })], [])
         }
 

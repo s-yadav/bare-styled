@@ -2,3 +2,9 @@ node_modules
 *.log
 lib
 .DS_Store
+
+# FUSE tombstones left by Cowork-mounted sessions (deleted-while-open files)
+.fuse*
+
+# raw samples from profiling/refresh-report.mjs
+profiling/.last-perf-samples.csv

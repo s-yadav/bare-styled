@@ -101,17 +101,17 @@
 
 <header class="hero">
   <div class="eyebrow">just-styled · performance report · July 2026</div>
-  <h1>Same styled-components API. No wrapper fiber. 21–64% faster.</h1>
+  <h1>Same styled-components API. No wrapper fiber. Half the re-render cost.</h1>
   <p class="sub">just-styled reimplements the styled-components authoring model but resolves every
   styled component to a plain host element at JSX time, and compiles fully-static templates to
   finished CSS at build time. Benchmarked against real styled-components on identical source,
   it wins all nine measured profiles.</p>
-  <div class="meta">jsdom · production React 18 · median of 12–25 iterations · identical DOM trees both ways · styled-components 6.4</div>
+  <div class="meta">jsdom · production React 18 · every figure = median of 3–4 independent benchmark runs, each itself a median of 12–25 iterations · identical DOM trees both ways · styled-components 6.4</div>
   <div class="kpis">
     <div class="kpi"><div class="v">23%</div><div class="l">avg. faster mount</div></div>
-    <div class="kpi"><div class="v">49%</div><div class="l">avg. faster re-render</div></div>
-    <div class="kpi win"><div class="v">64%</div><div class="l">best re-render (high-cardinality dynamic)</div></div>
-    <div class="kpi win"><div class="v">9 / 9</div><div class="l">profiles won</div></div>
+    <div class="kpi"><div class="v">48%</div><div class="l">avg. faster re-render</div></div>
+    <div class="kpi win"><div class="v">67%</div><div class="l">best re-render (high-cardinality dynamic)</div></div>
+    <div class="kpi win"><div class="v">81%</div><div class="l">of components stylis-free at render (skeleton + static)</div></div>
   </div>
 </header>
 
@@ -260,16 +260,16 @@ through the just-styled plugin + runtime. Both render the exact same DOM. Lower 
   </thead>
   <tbody>
     <tr class="group"><td colspan="8">Widget — cards + table; every row carries two static cells (id/total columns) plus tint cells; includes a compiled .attrs input + keyframes dot</td></tr>
-    <tr><td>60×5, few tints</td><td class="num">508</td><td class="num">8.53</td><td class="num">6.76</td><td class="num"><span class="delta">+21%</span></td><td class="num">4.46</td><td class="num">2.30</td><td class="num"><span class="delta">+48%</span></td></tr>
-    <tr><td>60×5, all static</td><td class="num">508</td><td class="num">8.73</td><td class="num">6.72</td><td class="num"><span class="delta">+23%</span></td><td class="num">4.36</td><td class="num">2.26</td><td class="num"><span class="delta">+48%</span></td></tr>
-    <tr><td>60×5, unique tint per cell</td><td class="num">508</td><td class="num">8.90</td><td class="num">6.40</td><td class="num"><span class="delta">+28%</span></td><td class="num">6.26</td><td class="num">2.25</td><td class="num"><span class="delta">+64%</span></td></tr>
-    <tr><td>200×8, few tints</td><td class="num">2,228</td><td class="num">36.91</td><td class="num">29.22</td><td class="num"><span class="delta">+21%</span></td><td class="num">23.08</td><td class="num">12.31</td><td class="num"><span class="delta">+47%</span></td></tr>
-    <tr><td>200×8, all static</td><td class="num">2,228</td><td class="num">37.34</td><td class="num">28.73</td><td class="num"><span class="delta">+23%</span></td><td class="num">20.77</td><td class="num">11.79</td><td class="num"><span class="delta">+43%</span></td></tr>
-    <tr><td>200×8, unique tint per cell</td><td class="num">2,228</td><td class="num">41.30</td><td class="num">29.62</td><td class="num"><span class="delta">+28%</span></td><td class="num">31.43</td><td class="num">12.84</td><td class="num"><span class="delta">+59%</span></td></tr>
+    <tr><td>60×5, few tints</td><td class="num">508</td><td class="num">8.95</td><td class="num">8.82</td><td class="num"><span class="delta">+1%</span></td><td class="num">4.12</td><td class="num">2.02</td><td class="num"><span class="delta">+51%</span></td></tr>
+    <tr><td>60×5, all static</td><td class="num">508</td><td class="num">8.93</td><td class="num">7.05</td><td class="num"><span class="delta">+21%</span></td><td class="num">4.05</td><td class="num">2.03</td><td class="num"><span class="delta">+50%</span></td></tr>
+    <tr><td>60×5, unique tint per cell</td><td class="num">508</td><td class="num">9.55</td><td class="num">6.59</td><td class="num"><span class="delta">+31%</span></td><td class="num">6.29</td><td class="num">2.05</td><td class="num"><span class="delta">+67%</span></td></tr>
+    <tr><td>200×8, few tints</td><td class="num">2,228</td><td class="num">37.83</td><td class="num">28.05</td><td class="num"><span class="delta">+26%</span></td><td class="num">18.81</td><td class="num">11.28</td><td class="num"><span class="delta">+40%</span></td></tr>
+    <tr><td>200×8, all static</td><td class="num">2,228</td><td class="num">38.56</td><td class="num">32.48</td><td class="num"><span class="delta">+16%</span></td><td class="num">19.56</td><td class="num">11.04</td><td class="num"><span class="delta">+44%</span></td></tr>
+    <tr><td>200×8, unique tint per cell</td><td class="num">2,228</td><td class="num">39.36</td><td class="num">27.69</td><td class="num"><span class="delta">+30%</span></td><td class="num">27.29</td><td class="num">11.38</td><td class="num"><span class="delta">+58%</span></td></tr>
     <tr class="group"><td colspan="8">Dashboard — app chrome + sidebar + stat cards + 150-row table; cell mix selects the profile</td></tr>
-    <tr><td>150 rows, mixed cells (real-world)</td><td class="num">1,242</td><td class="num">20.76</td><td class="num">15.98</td><td class="num"><span class="delta">+23%</span></td><td class="num">10.54</td><td class="num">5.88</td><td class="num"><span class="delta">+44%</span></td></tr>
-    <tr><td>150 rows, all-static cells</td><td class="num">1,242</td><td class="num">20.64</td><td class="num">16.08</td><td class="num"><span class="delta">+22%</span></td><td class="num">9.40</td><td class="num">4.45</td><td class="num"><span class="delta">+53%</span></td></tr>
-    <tr><td>150 rows, all-dynamic cells</td><td class="num">1,242</td><td class="num">22.24</td><td class="num">17.39</td><td class="num"><span class="delta">+22%</span></td><td class="num">12.05</td><td class="num">7.55</td><td class="num"><span class="delta">+37%</span></td></tr>
+    <tr><td>150 rows, mixed cells (real-world)</td><td class="num">1,242</td><td class="num">21.20</td><td class="num">15.95</td><td class="num"><span class="delta">+25%</span></td><td class="num">9.56</td><td class="num">5.81</td><td class="num"><span class="delta">+39%</span></td></tr>
+    <tr><td>150 rows, all-static cells</td><td class="num">1,242</td><td class="num">21.21</td><td class="num">15.33</td><td class="num"><span class="delta">+28%</span></td><td class="num">7.63</td><td class="num">3.89</td><td class="num"><span class="delta">+49%</span></td></tr>
+    <tr><td>150 rows, all-dynamic cells</td><td class="num">1,242</td><td class="num">22.10</td><td class="num">16.41</td><td class="num"><span class="delta">+26%</span></td><td class="num">10.56</td><td class="num">6.60</td><td class="num"><span class="delta">+38%</span></td></tr>
   </tbody>
 </table>
 
@@ -333,10 +333,10 @@ const LABELS = [
   'widget 200×8 · few', 'widget 200×8 · static', 'widget 200×8 · unique',
   'dash 150r · mixed', 'dash 150r · static', 'dash 150r · dynamic'
 ];
-const JS = { mount: [6.76, 6.72, 6.40, 29.22, 28.73, 29.62, 15.98, 16.08, 17.39],
-             update: [2.30, 2.26, 2.25, 12.31, 11.79, 12.84, 5.88, 4.45, 7.55] };
-const SC = { mount: [8.53, 8.73, 8.90, 36.91, 37.34, 41.30, 20.76, 20.64, 22.24],
-             update: [4.46, 4.36, 6.26, 23.08, 20.77, 31.43, 10.54, 9.40, 12.05] };
+const JS = { mount: [8.82, 7.05, 6.59, 28.05, 32.48, 27.69, 15.95, 15.33, 16.41],
+             update: [2.02, 2.03, 2.05, 11.28, 11.04, 11.38, 5.81, 3.89, 6.60] };
+const SC = { mount: [8.95, 8.93, 9.55, 37.83, 38.56, 39.36, 21.20, 21.21, 22.10],
+             update: [4.12, 4.05, 6.29, 18.81, 19.56, 27.29, 9.56, 7.63, 10.56] };
 const dMount = SC.mount.map((s, i) => Math.round((s - JS.mount[i]) / s * 100));
 const dUpdate = SC.update.map((s, i) => Math.round((s - JS.update[i]) / s * 100));
 

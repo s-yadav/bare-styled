@@ -1,10 +1,5 @@
-// createElement / jsx patch + descriptor resolution (hash-class model).
-//
-// A descriptor produced by `createStyled` is resolved to a plain host element
-// (or forwarded to its component target) at element-creation time — no wrapper
-// fiber. Styles are generated exactly like styled-components (resolve the
-// template against props, hash, inject a rule, use the class), just without the
-// component in the tree. No CSS variables, no bail-out, no sc-inline.
+// createElement / jsx patch + descriptor resolution: descriptors resolve to
+// plain host elements at element-creation time — no wrapper fiber.
 'use strict'
 
 const React = require('react')
@@ -17,21 +12,16 @@ const EMPTY = {}
 let installed = false
 let patchedEntries = null
 
-// A genuine descriptor self-references under the shared symbol; a real styled
-// component that hoisted the symbol points at the original descriptor, so the
-// identity check excludes it. The `typeof === 'object'` gate is a hot-path
-// optimization: this runs for EVERY element the app creates, and it lets string
-// tags ('div') and function components skip the symbol property read entirely
-// (descriptors are forwardRef objects).
+// Self-reference under the shared symbol (a hoisted copy would point at the
+// original, not itself). Runs for EVERY element the app creates: the typeof
+// gate lets string tags and function components skip the symbol read.
 function isDescriptor(type) {
   return type !== null && typeof type === 'object' && type[IS_STYLED] === type
 }
 
-// Apply a base-first list of attrs (objects or fns of the execution context)
-// to props, styled-components semantics: each attr's keys OVERRIDE the context
-// (the fn received the props and owns default logic), except `className`
-// (joined) and `style` (shallow-merged). Attr fns that throw (e.g. context
-// theme access — unsupported) are dropped like style interpolations are.
+// Apply a base-first attrs list, styled-components semantics: attrs OVERRIDE
+// the context (the fn received the props), except className (joined) and
+// style (shallow-merged). Throwing attr fns are dropped (theme limitation).
 function applyAttrs(attrsList, props) {
   const context = {}
   for (const key in props) context[key] = props[key]
@@ -76,21 +66,25 @@ function isAlwaysKept(key) {
   )
 }
 
-// Filter props for a native tag (drop non-DOM props styled-components style),
-// set the resolved className, and drop the `as` control prop. A custom
-// shouldForwardProp (withConfig) REPLACES the default filter for ordinary
-// props, matching styled-components; className/style/children stay managed.
+// Filter props for a native tag. A custom shouldForwardProp REPLACES the
+// default filter (styled-components semantics); className/style/children stay
+// managed; `as` is dropped.
 function buildHostProps(props, className, sfp, target) {
   const next = {}
   if (props) {
-    for (const key in props) {
-      if (key === 'as') continue
-      if (sfp) {
+    // sfp hoisted out of the loop: the default-filter loop is the hot path
+    // (runs per prop of every styled host element).
+    if (sfp) {
+      for (const key in props) {
+        if (key === 'as') continue
         if (key === 'className' || key === 'style' || key === 'children' || sfp(key, target)) {
           next[key] = props[key]
         }
-      } else if (isAlwaysKept(key) || isPropValid(key)) {
-        next[key] = props[key]
+      }
+    } else {
+      for (const key in props) {
+        if (key === 'as') continue
+        if (isAlwaysKept(key) || isPropValid(key)) next[key] = props[key]
       }
     }
   }
@@ -98,42 +92,73 @@ function buildHostProps(props, className, sfp, target) {
   return next
 }
 
-// The descriptor's own style classes for these props: the componentId (marker
-// + static styles), plus the per-props hash class when dynamic. Shared by
-// resolveDescriptor and by the styled-components fold interop (the descriptor's
-// componentStyle shim — see createStyled), which needs exactly this and nothing
-// else of element resolution.
+// The descriptor's style classes for these props. Also the styled-components
+// fold interop entry point (the descriptor's componentStyle shim).
 function styleClassesFor(type, props) {
   if (type.isStatic) {
-    // Styles never change: inject once under the componentId, which then doubles
-    // as the style class. No per-render resolve or hash. registerStatic dedups
-    // via a generation stamp on the descriptor (one property compare per render)
-    // that engine.__reset invalidates, so it correctly re-registers after a
-    // __resetSheet.
+    // Rule injected once under the componentId, which doubles as the class.
     engine.registerStatic(type)
     return type.componentId
   }
-  // Prop-dependent: componentId is a marker (for `${Comp}` selectors); the
-  // hash class carries the resolved styles, hashed per component and injected
-  // into this component's group.
+  if (type._varFns) {
+    // Skeleton mode: resolve the value fns; engine stitches/caches by the
+    // short joined value key — no stylis, no full-body string.
+    const fns = type._varFns
+    const values = new Array(fns.length)
+    for (let i = 0; i < fns.length; i++) values[i] = engine.resolveValue(fns[i], props)
+    return type.componentId + ' ' + engine.classForVars(type, values)
+  }
+  // Live template: componentId is the `${Comp}` selector marker; the hash
+  // class carries the resolved styles.
   return (
     type.componentId + ' ' + engine.classFor(type, engine.resolveParts(type.parts, props))
   )
 }
 
 // Resolve a descriptor + props into { type, props } for the real element.
-// `sfp` is the effective shouldForwardProp for the chain (threaded from the
-// outermost descriptor — extender's config wins, styled-components' folding
-// semantics). Attrs are NOT applied here — unwrap applies the chain's full
-// base-first attrs list exactly once before resolution starts.
+// `sfp` (shouldForwardProp) and `fwd` (forwardProps) are the chain-effective
+// values threaded from the outermost descriptor — extender's config wins,
+// styled-components' folding semantics. Attrs are NOT applied here — unwrap
+// applies the chain's full base-first attrs list exactly once before
+// resolution starts.
+//
+// forwardProps: ONE call shaping ALL element props — `(props) => nextProps`.
+// What it returns is what the final target receives (plus our className and a
+// preserved `children` unless the shape explicitly includes one). It fully
+// replaces the default per-prop filter AND shouldForwardProp — a single
+// destructure instead of a closure call per prop. Style interpolations
+// resolved above see the ORIGINAL context, so transient styling props can be
+// stripped from the element while still driving CSS. It applies only at the
+// FINAL target (host tag or non-descriptor component); intermediate descriptor
+// levels keep the full context so every template in the chain sees all props.
 //
 // Cascade ordering (styled(StyledComponent), same element, etc.) is handled by
 // the sheet's group ordering — each component's rule lands in its definition-order
 // group, so a base always precedes its extender. Nothing to reorder here.
-function resolveDescriptor(type, props, sfp) {
+function resolveDescriptor(type, props, sfp, fwd) {
   const p = props || EMPTY
-  const className = styleClassesFor(type, p) + (p.className ? ' ' + p.className : '')
+  const styleClasses = styleClassesFor(type, p)
   const target = p.as || type.component
+
+  // isFinal (host tag or non-descriptor component) is only needed on the fwd
+  // path — keep it off the common per-element path.
+  if (fwd && (typeof target === 'string' || !isDescriptor(target))) {
+    const shaped = fwd(p) || EMPTY
+    const next = {}
+    for (const key in shaped) {
+      // `as` was already consumed for target selection; className merges below;
+      // children always come from the ORIGINAL element (forwardProps shapes
+      // attributes — and the classic createElement path re-appends positional
+      // children anyway, so honoring a shaped children key would behave
+      // differently between the jsx runtime and the patch).
+      if (key !== 'as' && key !== 'className' && key !== 'children') next[key] = shaped[key]
+    }
+    if ('children' in p) next.children = p.children
+    next.className = styleClasses + (shaped.className ? ' ' + shaped.className : '')
+    return { type: target, props: next }
+  }
+
+  const className = styleClasses + (p.className ? ' ' + p.className : '')
   if (typeof target === 'string') {
     return { type: target, props: buildHostProps(p, className, sfp, target) }
   }
@@ -159,8 +184,9 @@ function resolveDescriptor(type, props, sfp) {
 function unwrap(type, props) {
   const p = type._attrsAll ? applyAttrs(type._attrsAll, props || EMPTY) : props
   const sfp = type._sfp
-  let r = resolveDescriptor(type, p, sfp)
-  while (isDescriptor(r.type)) r = resolveDescriptor(r.type, r.props, sfp)
+  const fwd = type._fwd
+  let r = resolveDescriptor(type, p, sfp, fwd)
+  while (isDescriptor(r.type)) r = resolveDescriptor(r.type, r.props, sfp, fwd)
   return r
 }
 

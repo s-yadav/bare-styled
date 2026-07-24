@@ -1,21 +1,8 @@
-// Singleton style sheet shared by every descriptor in the app.
-//
-// Rules are ordered by GROUP — a per-component number assigned in definition
-// (module-load) order — mirroring styled-components. A rule is inserted at the
-// end of its group's span, so every rule of a lower group precedes every rule of
-// a higher group in the sheet, regardless of the order components first render.
-// Because a base component is always defined before a component that extends it,
-// base rules always precede extender rules, so the extender wins the cascade on
-// equal specificity — without folding and without any render-time reordering.
-//
-// In the browser rules go into a single <style data-just-styled> via the CSSOM
-// insertRule API (positional). Without a DOM they are collected in memory for
-// SSR/getCss, still in group order. Rules the CSSOM rejects go into a SEPARATE
-// <style data-just-styled-fallback> as text — never into the main element:
-// mutating a <style>'s text content makes the browser re-parse it and REPLACE
-// its CSSStyleSheet, silently discarding every rule previously added via
-// insertRule. (Rejected rules are typically selectors the engine can't parse
-// anyway — e.g. another vendor's pseudo-elements — so best-effort text is fine.)
+// Singleton style sheet. Rules are ordered by GROUP (per-component number in
+// definition order): a rule is inserted at the end of its group's span, so a
+// base's rules always precede its extender's and the extender wins the cascade
+// — no folding, no render-time reordering. Browser rules go into one <style>
+// via CSSOM insertRule; without a DOM they're collected in memory for SSR.
 'use strict'
 
 const registered = new Set() // className -> inserted once (dedup)
@@ -43,12 +30,9 @@ function getFallbackElement() {
   return fallbackElement
 }
 
-// Split a compiled css string into individual top-level rules (CSSOM insertRule
-// takes one rule at a time). Only used for the plugin's build-time precompiled
-// strings — the engine passes rules as an array, collected one at a time by
-// stylis's rulesheet middleware at serialize time. Splits at brace depth 0
-// (@media{...} blocks stay intact) and ignores braces inside quoted strings
-// (content:"}" must not end a rule).
+// Split a compiled css string into top-level rules (insertRule takes one at a
+// time). Only for build-time precompiled strings — the engine passes arrays.
+// Splits at brace depth 0; braces inside quoted strings are ignored.
 function splitRules(css) {
   const out = []
   let depth = 0
@@ -75,13 +59,9 @@ function splitRules(css) {
   return out
 }
 
-// ---- group offset math -------------------------------------------------------
-// groupStart(g) = sum of all lower groups' sizes. A naive loop is O(G) per rule
-// insert; with thousands of styled definitions (groups) that's O(G) work on the
-// mount path for every first-seen rule. A Fenwick (binary indexed) tree over
-// groupSizes makes both the prefix-sum query and the size increment O(log G).
-// The tree mirrors groupSizes (which stays the plain source of truth); it is
-// rebuilt on capacity growth (rare, amortized) and zeroed on __resetSheet.
+// Group offset math: Fenwick tree over groupSizes makes prefix-sum query and
+// increment O(log G) instead of O(G) per insert. groupSizes stays the plain
+// source of truth; the tree is rebuilt on growth and zeroed on __resetSheet.
 let bit = new Uint32Array(2048) // 1-based; bit[j] covers a range of groups ending at j-1
 
 function bitEnsure(count) {
@@ -110,11 +90,8 @@ function groupStart(g) {
   return n
 }
 
-// Register a compiled rule for `group`, deduped by className. `css` is either an
-// array of individual rules (from the engine's rulesheet-collected serialize) or
-// a compiled string (the plugin's build-time precompiled css), split here. New
-// rules are inserted at the END of their group's span, keeping the sheet ordered
-// by group.
+// Register a compiled rule (array of rules, or a string split here) for
+// `group`, deduped by className, inserted at the END of the group's span.
 function registerRule(group, className, css) {
   if (registered.has(className)) return
   registered.add(className)

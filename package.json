@@ -15,6 +15,10 @@
       "types": "./types/vite-plugin.d.ts",
       "default": "./lib/vite-plugin.js"
     },
+    "./types": {
+      "types": "./types/styled-components-augment.d.ts",
+      "default": "./types/augment-stub.js"
+    },
     "./lib/*": "./lib/*",
     "./package.json": "./package.json"
   },

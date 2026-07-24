@@ -1,15 +1,6 @@
-// Render-time style engine (hash-class model).
-//
-// This is styled-components' own approach — resolve the template's
-// interpolations against the current props, hash the resulting CSS, generate a
-// class name, and inject the rule once — but run from the JSX runtime so the
-// styled component collapses to a host element (no wrapper fiber) instead of a
-// React component. No CSS variables, no bail-out, no sc-inline forwarding.
-//
-// styled-components' `css()` does the static half of the flatten for us at
-// definition time (resolving module values, inlining `css` fragments,
-// serializing style objects, turning `${StyledComponent}` into `.selector`),
-// leaving only prop-dependent functions. We call those functions per render.
+// Render-time style engine (hash-class model): styled-components' approach —
+// resolve interpolations against props, hash, inject the rule once — but run
+// from the JSX runtime so the styled component collapses to a host element.
 'use strict'
 
 const { compile, serialize, stringify, middleware, prefixer, rulesheet } = require('stylis')
@@ -17,22 +8,16 @@ const sheet = require('./sheet')
 
 const EMPTY = {}
 
-// Vendor prefixing is OPT-IN, matching styled-components v6 (which no longer
-// prefixes by default). Prefixing costs extra work per stylis compile and
-// roughly doubles rule size for legacy-flexbox-era output modern browsers
-// don't need. Apps that need it call setVendorPrefixes(true) once at startup
-// (and pass `vendorPrefixes: true` to the babel plugin so build-time
-// precompiled rules match).
+// Vendor prefixing is OPT-IN (styled-components v6 parity). Pair with the
+// plugin's `vendorPrefixes: true` so build-time compiled rules match.
 let vendorPrefixes = false
 function setVendorPrefixes(on) {
   vendorPrefixes = !!on
 }
 
-// Compile a css string into an ARRAY of individual serialized rules, collected
-// by stylis's rulesheet middleware. Rule-at-a-time output is what the sheet's
-// CSSOM insertRule needs; collecting during serialize avoids re-splitting the
-// blob (brace-counting a serialized string breaks on braces inside quoted
-// strings like content:"}").
+// Compile css into an ARRAY of individual rules via stylis's rulesheet
+// middleware (re-splitting a serialized blob breaks on braces inside quoted
+// strings like content:"}"; CSSOM insertRule needs one rule at a time).
 function compileRules(css) {
   const rules = []
   const collect = rulesheet(function (rule) {
@@ -88,19 +73,12 @@ function hash(str) {
   return (h >>> 0).toString(36)
 }
 
-// Flatten the tagged template once at definition time. Module values, css
-// fragments, styled-component selectors and style objects are baked into
-// strings here; user functions survive to be called per render.
-//
-// scCss can THROW at definition time when interpolated objects come from a
-// DIFFERENT styled-components copy than ours (e.g. a linked runtime with its
-// own node_modules): flatten's `instanceof Keyframes` misses the foreign
-// instance, falls through to `.toString()`, and Keyframes.toString throws
-// "interpolating a keyframe declaration into an untagged string". Deduping
-// styled-components in the app bundler is the real fix, but a template must
-// never crash module eval — so fall back to a naive interleave of the raw
-// strings and interpolations; resolveValue handles every chunk type from
-// there (including foreign keyframes, via duck-typing).
+// Flatten the tagged template once at definition time (styled-components'
+// css() bakes static parts into strings; functions survive for render).
+// GOTCHA: css() can THROW when interpolated objects come from a DIFFERENT
+// styled-components copy (instanceof Keyframes misses → toString throws).
+// A template must never crash module eval — fall back to a naive interleave;
+// resolveValue handles every chunk type, incl. foreign keyframes (duck-typed).
 function cacheParts(strings, interps) {
   if (scCss) {
     try {
@@ -119,14 +97,10 @@ function cacheParts(strings, interps) {
 }
 
 // ---- keyframes ---------------------------------------------------------------
-// A styled-components Keyframes object (duck-typed: { name, rules, getName } —
-// identical shape in v5/v6, and instanceof-free so it works across duplicate
-// styled-components copies). We inject the @keyframes rule into OUR sheet once
-// and resolve the interpolation to the animation name — keyframes therefore
-// work in compiled components without the styled-components sheet. Keyframes
-// are name-scoped and order-independent, so they share one lazily-created
-// group. The compiled rules are cached by name; sheet.registerRule dedups
-// (re-)insertion per sheet lifetime, so a __resetSheet re-injects correctly.
+// styled-components Keyframes are duck-typed ({ name, rules, getName } — same
+// shape in v5/v6, instanceof-free so duplicate SC copies work). Inject the
+// @keyframes rule into OUR sheet once, resolve to the animation name. Name-
+// scoped and order-independent, so all share one lazily-created group.
 let keyframesGroup = -1
 const compiledKeyframes = new Map() // name -> compiled rules array
 function isKeyframes(v) {
@@ -158,11 +132,9 @@ function resolveValue(v, props) {
   if (t === 'string') return v
   if (t === 'number') return String(v)
   if (t === 'function') {
-    // KNOWN LIMITATION: theme via <ThemeProvider> is not supported — a plain
-    // host element can't read React context, so `props.theme` is undefined and
-    // `p => p.theme.x` throws. We swallow the throw and drop that interpolation
-    // (the rest of the rule still applies) rather than crash the render. Use a
-    // module-scope theme constant instead. See README / docs.
+    // KNOWN LIMITATION: no ThemeProvider — `props.theme` is undefined, so
+    // `p => p.theme.x` throws. Swallow it and drop that interpolation (the
+    // rest of the rule still applies). Use module-scope theme constants.
     try {
       return resolveValue(v(props), props)
     } catch (e) {
@@ -190,11 +162,9 @@ function resolveParts(parts, props) {
   return out
 }
 
-// A component is static when no interpolation is prop-dependent (css() already
-// baked module values, fragments and selectors into strings, so any surviving
-// function is the only thing that can vary between renders). Static components
-// resolve once to a single rule under their componentId — no per-render resolve
-// or hash.
+// Static = no surviving function interpolations (css() already baked
+// everything else into strings). Static components register one rule under
+// their componentId — no per-render resolve or hash.
 function isStatic(parts) {
   for (let i = 0; i < parts.length; i++) if (typeof parts[i] === 'function') return false
   return true
@@ -206,21 +176,11 @@ function serializeStatic(componentId, parts) {
 }
 
 // ---- idle precompilation of static rules ------------------------------------
-// A static component (module values / fragments, no prop-dependent functions) is
-// cheap to render but still needs a stylis compile the first time it renders. We
-// move that compile OFF the render critical path: at definition (module-load)
-// time each static descriptor is queued, and a single requestIdleCallback drains
-// the queue during browser idle, caching each serialized rule string. First
-// render then just inserts the cached string (a DOM write, no compile).
-//
-// DOM insertion stays lazy — the idle pass only precomputes strings, it does not
-// touch the sheet — so we never inject CSS for a component that is defined but
-// never rendered, and sheet order still follows first render (no idle-vs-render
-// ordering race). If a component renders before idle reaches it, registerStatic
-// compiles inline; the shared idle callback + the staticRegistered guard mean the
-// two paths never double-compile, so no explicit per-item cancellation is needed.
-// Degrades to today's inline path where requestIdleCallback is unavailable
-// (SSR / jsdom / older Safari).
+// Static rules the build couldn't prove compile during requestIdleCallback, off
+// the render critical path; first render just inserts the cached string. The
+// idle pass ONLY precomputes — DOM insertion stays lazy (no CSS for unrendered
+// components, no idle-vs-render ordering race). Falls back to inline compile
+// where rIC is unavailable (SSR / jsdom / older Safari).
 const precomputed = new Map() // componentId -> compiled rules array (awaiting first render)
 const pendingStatic = [] // { componentId, parts } awaiting idle precompile
 let idleArmed = false
@@ -262,20 +222,14 @@ function queueStatic(componentId, parts) {
 }
 
 // Register a static component's rule under its componentId, once per sheet
-// lifetime. The dedup guard is a module-level Set (cleared with the sheet in
-// __reset), NOT a per-descriptor flag: descriptors are module-level and outlive
-// any __resetSheet, so a per-descriptor "already done" boolean would stay true
-// after the sheet was cleared and permanently suppress re-registration, leaving
-// the static/compile-time CSS missing from the DOM. Keying the guard to the
-// sheet's own lifetime keeps the two in sync. The serialized rule is taken from
-// the plugin's build-time precompiled css when present, else the idle precompute
-// cache, else compiled inline here — and only ever computed once.
+// lifetime. Guards must be keyed to the SHEET lifetime (generation / a Set
+// cleared in __reset), never a plain per-descriptor boolean — descriptors
+// outlive __resetSheet and would permanently suppress re-registration.
+// Rule source: build-precompiled css > idle precompute cache > inline compile.
 const staticRegistered = new Set()
 function registerStatic(descriptor) {
-  // Hot-path guard: resolveDescriptor calls this on EVERY render of every
-  // static element. A generation-stamped flag on the descriptor is a single
-  // property compare (vs a Set hash lookup); the stamp is invalidated by
-  // __reset bumping `generation`, keeping it in sync with the sheet lifetime.
+  // Runs on EVERY render of every static element: the generation stamp is a
+  // single property compare on the hot path.
   if (descriptor._regGen === generation) return
   descriptor._regGen = generation
   const componentId = descriptor.componentId
@@ -292,22 +246,18 @@ function registerStatic(descriptor) {
   sheet.registerRule(descriptor.group, componentId, css)
 }
 
-// Definition-order group counter. Each styled component takes the next group at
-// definition time (module load), so a component that extends another always has
-// a higher group than its base — which is what makes the sheet's group ordering
-// put base rules before extender rules. (Mirrors styled-components.)
+// Definition-order group counter: a base is always defined before its extender,
+// so base.group < extender.group — the sheet's group ordering makes extenders
+// win equal-specificity conflicts. (Mirrors styled-components.)
 let groupCounter = 0
 function nextGroup() {
   return groupCounter++
 }
 
-// A body is "flat" when it contains no nested blocks ({ }), parent selectors
-// (&), at-rules (@), or slashes (/) — i.e. it is a plain run of declarations
-// that stylis would serialize verbatim into a single rule. The slash check is
-// for comments: stylis strips /* */ and non-standard // comments, and a //
-// comment left in a raw rule would make it invalid CSS. It over-rejects
-// legitimate values like font:16px/1.5 or url(...) — those just take the
-// stylis path. Conservative but always correct.
+// "Flat" = plain declarations, no { } & @ / — stylis would serialize it
+// verbatim into one rule. `/` is rejected because stylis strips // comments,
+// which a raw rule can't contain; legit slashes (font:16px/1.5, url()) just
+// take the stylis path. Conservative but always correct.
 function isFlatBody(css) {
   for (let i = 0; i < css.length; i++) {
     const c = css.charCodeAt(i)
@@ -316,14 +266,10 @@ function isFlatBody(css) {
   return true
 }
 
-// Generated class for a resolved CSS body, hashed PER COMPONENT (componentId +
-// css) and cached on the descriptor. Per-component (not global) so a rule belongs
-// to exactly one component/group — a shared global class couldn't sit in two
-// groups at once, which is what broke cross-component cascade ordering. Two
-// components with identical css get distinct classes/rules (each in its own
-// group), matching styled-components; within a component, its instances/renders
-// still dedup via the descriptor's own cache. The descriptor's cache is lazily
-// cleared after a sheet reset via the generation counter.
+// Class for a resolved CSS body, hashed PER COMPONENT and cached on the
+// descriptor. Per-component (never global): a rule must belong to exactly one
+// group or cross-component cascade ordering breaks. Caches lazily reset after
+// __reset via the generation counter.
 let generation = 0
 function classFor(descriptor, cssBody) {
   if (descriptor._gen !== generation) {
@@ -334,16 +280,86 @@ function classFor(descriptor, cssBody) {
   if (cached !== undefined) return cached
   const cls = 'js-' + hash(descriptor.componentId + cssBody)
   descriptor._cache.set(cssBody, cls)
-  // Flat bodies (plain declarations — no nesting, no parent selector, no
-  // at-rules) don't need a stylis compile: the finished rule is just
-  // `.cls{body}`. With prefixing off (the default) that skips stylis entirely
-  // on the dominant dynamic path; anything structured still goes through
-  // stylis, as does everything when vendor prefixing is enabled.
+  // Flat bodies skip stylis: `.cls{body}` IS the finished rule (prefixing off).
   const rules =
     !vendorPrefixes && isFlatBody(cssBody)
       ? ['.' + cls + '{' + cssBody + '}']
       : compileRules('.' + cls + '{' + cssBody + '}')
   sheet.registerRule(descriptor.group, cls, rules)
+  return cls
+}
+
+// ---- skeleton mode -------------------------------------------------------------
+// The build ships `skeleton` (stylis-compiled rule, `__jsc__` class token +
+// `var(--js-N)` value placeholders) and `vars` (live expressions, in slot
+// order). Render never runs stylis: resolve the fns, cache by the short joined
+// value string, stitch misses from segments parsed once at definition.
+const SKELETON_TOKEN_RE = /__jsc__|var\(--js-(\d+)\)/g
+function parseSkeleton(skeleton) {
+  const strings = []
+  const slots = []
+  let last = 0
+  let m
+  SKELETON_TOKEN_RE.lastIndex = 0
+  while ((m = SKELETON_TOKEN_RE.exec(skeleton))) {
+    strings.push(skeleton.slice(last, m.index))
+    slots.push(m[1] === undefined ? -1 : +m[1])
+    last = m.index + m[0].length
+  }
+  strings.push(skeleton.slice(last))
+  return { strings, slots }
+}
+
+// Substitute non-function vars into a skeleton once (definition time). The
+// remaining var indices are renumbered against the fns array order.
+function substituteStaticVars(skeleton, vars) {
+  const fns = []
+  const resolved = vars.map(v => (typeof v === 'function' ? null : resolveValue(v, EMPTY)))
+  const out = skeleton.replace(SKELETON_TOKEN_RE, m0 => {
+    if (m0 === '__jsc__') return '__jsc__'
+    const k = +m0.slice(9, -1) // var(--js-K)
+    if (resolved[k] !== null) return resolved[k]
+    let idx = fns.indexOf(vars[k])
+    if (idx === -1) {
+      idx = fns.length
+      fns.push(vars[k])
+    }
+    return 'var(--js-' + idx + ')'
+  })
+  return { skeleton: out, fns }
+}
+
+// Class + rule for a skeleton component's resolved var values. The cache key is
+// the SHORT joined value string (not a full CSS body); the miss path is a
+// segment join — no stylis. Values containing braces could break out of the
+// precompiled structure, so those variants are renormalized through stylis
+// (rare; typically hostile or malformed input).
+function classForVars(descriptor, values) {
+  if (descriptor._gen !== generation) {
+    descriptor._cache = new Map()
+    descriptor._gen = generation
+  }
+  let key = values[0]
+  for (let i = 1; i < values.length; i++) key += '\x1f' + values[i]
+  const cached = descriptor._cache.get(key)
+  if (cached !== undefined) return cached
+  const cls = 'js-' + hash(descriptor.componentId + '\x1f' + key)
+  descriptor._cache.set(key, cls)
+
+  const seg = descriptor._segments
+  let css = seg.strings[0]
+  let braces = false
+  for (let i = 0; i < seg.slots.length; i++) {
+    const s = seg.slots[i]
+    if (s === -1) css += cls
+    else {
+      const v = values[s]
+      if (v.indexOf('{') !== -1 || v.indexOf('}') !== -1) braces = true
+      css += v
+    }
+    css += seg.strings[i + 1]
+  }
+  sheet.registerRule(descriptor.group, cls, braces ? compileRules(css) : css)
   return cls
 }
 
@@ -355,7 +371,11 @@ function __reset() {
 module.exports = {
   cacheParts,
   resolveParts,
+  resolveValue,
   classFor,
+  classForVars,
+  parseSkeleton,
+  substituteStaticVars,
   isStatic,
   registerStatic,
   queueStatic,

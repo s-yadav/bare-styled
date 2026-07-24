@@ -110,6 +110,82 @@ describe('descriptor resolution (hash-class, no wrapper fiber)', () => {
   })
 })
 
+describe('skeleton mode (build-compiled structure, render = substitution)', () => {
+  const SKEL = '.__jsc__{color:var(--js-0);}.__jsc__:hover{background:var(--js-1);}'
+
+  it('renders nested skeletons with per-variant classes — no stylis at render', () => {
+    const Box = createStyled('div', {
+      componentId: 'sc-sk1',
+      skeleton: SKEL,
+      vars: [p => p.c, p => p.bg],
+    })``
+    render(React.createElement(Box, { c: 'red', bg: 'blue' }, 'x'))
+    const el = container.querySelector('div')
+    const js = (el.className.match(/js-[a-z0-9]+/) || [])[0]
+    expect(el.className).toBe('sc-sk1 ' + js)
+    expect(getCss()).toContain('.' + js + '{color:red;}')
+    expect(getCss()).toContain('.' + js + ':hover{background:blue;}') // structure from BUILD
+  })
+
+  it('same values -> same class (short-key cache); different values -> new variant', () => {
+    const Box = createStyled('div', { componentId: 'sc-sk2', skeleton: '.__jsc__{color:var(--js-0);}', vars: [p => p.c] })``
+    render(React.createElement('div', null,
+      React.createElement(Box, { c: 'red', key: 1 }),
+      React.createElement(Box, { c: 'red', key: 2 }),
+      React.createElement(Box, { c: 'teal', key: 3 })))
+    const classes = [...container.querySelectorAll('.sc-sk2')].map(e => (e.className.match(/js-[a-z0-9]+/) || [])[0])
+    expect(classes[0]).toBe(classes[1])
+    expect(classes[0]).not.toBe(classes[2])
+    expect((getCss().match(/color:red/g) || []).length).toBe(1) // one rule for the pair
+  })
+
+  it('falsy values become empty declarations; the rest of the rule survives', () => {
+    const Box = createStyled('div', { componentId: 'sc-sk3', skeleton: '.__jsc__{background:var(--js-0);color:teal;}', vars: [p => p.bg] })``
+    render(React.createElement(Box, null, 'x'))
+    expect(getCss()).toMatch(/color:teal/)
+  })
+
+  it('brace guard: a value containing braces renormalizes through stylis (live-path parity)', () => {
+    // Matching styled-components semantics: a brace-bearing value can open a
+    // sibling rule (sanitization is the app's job, as with SC) — but the
+    // output must be WELL-FORMED (stylis renormalized, never raw-substituted),
+    // and the component's own rule must survive intact.
+    const Box = createStyled('div', { componentId: 'sc-sk4', skeleton: '.__jsc__{color:var(--js-0);}', vars: [p => p.c] })``
+    render(React.createElement(Box, { c: 'red;} .other{background:pink' }, 'x'))
+    const js = (container.querySelector('div').className.match(/js-[a-z0-9]+/) || [])[0]
+    expect(getCss()).toContain('.' + js + '{color:red;}') // main rule intact
+    expect(getCss()).toContain('.other{background:pink;}') // renormalized: properly terminated
+    // and the CSSOM accepted everything (nothing fell to the text fallback)
+    expect(document.head.querySelector('style[data-just-styled-fallback]')).toBeNull()
+  })
+
+  it('non-function vars substitute at definition; zero fns promotes to fully static', () => {
+    const spin = { name: 'kfsk', rules: '0%{opacity:0;}', getName() { return this.name } } // keyframes duck
+    const Box = createStyled('div', {
+      componentId: 'sc-sk5',
+      skeleton: '.__jsc__{animation:var(--js-0) 1s;color:var(--js-1);}',
+      vars: [spin, 'teal'],
+    })``
+    expect(Box.isStatic).toBe(true) // promoted — no render-time work at all
+    render(React.createElement(Box, null, 'x'))
+    expect(container.querySelector('div').className).toBe('sc-sk5')
+    expect(getCss()).toContain('.sc-sk5{animation:kfsk 1s;color:teal;}')
+    expect(getCss()).toContain('@keyframes kfsk') // injected during substitution
+  })
+
+  it('mixed vars: statics substitute once, fns renumber and resolve per render', () => {
+    const Box = createStyled('div', {
+      componentId: 'sc-sk6',
+      skeleton: '.__jsc__{border:1px solid var(--js-0);color:var(--js-1);}',
+      vars: ['#eee', p => p.c],
+    })``
+    expect(Box.isStatic).toBe(false)
+    render(React.createElement(Box, { c: 'red' }, 'x'))
+    const js = (container.querySelector('div').className.match(/js-[a-z0-9]+/) || [])[0]
+    expect(getCss()).toContain('.' + js + '{border:1px solid #eee;color:red;}')
+  })
+})
+
 describe('native .attrs / .withConfig (styled-components semantics)', () => {
   it('object attrs land on the host; incoming props are overridden by attrs', () => {
     const Field = createStyled('input', { componentId: 'sc-att1', attrs: [{ type: 'text' }] })`border: 1px solid #ccc;`
@@ -215,6 +291,189 @@ describe('native .attrs / .withConfig (styled-components semantics)', () => {
     expect(el.getAttribute('type')).toBe('button')
     expect(el.className).toBe('sc-chained')
     expect(getCss()).toContain('.sc-chained{padding:2px;}')
+  })
+})
+
+describe('shouldForwardProp (withConfig) — full semantics', () => {
+  it('receives (prop, target) and REPLACES the default filter (not layered on it)', () => {
+    const seen = []
+    const Box = createStyled('section', {
+      componentId: 'sc-sfp1',
+      shouldForwardProp: (prop, target) => {
+        seen.push([prop, target])
+        return prop !== 'blocked'
+      },
+    })`color: red;`
+    render(React.createElement(Box, { blocked: 'x', customattr: 'kept', title: 'ok' }, 'y'))
+    const el = container.querySelector('section')
+    expect(el.hasAttribute('blocked')).toBe(false) // filtered by the custom fn
+    // a prop the DEFAULT filter (@emotion/is-prop-valid) would DROP is kept,
+    // because a custom fn fully decides — styled-components semantics
+    expect(el.getAttribute('customattr')).toBe('kept')
+    expect(el.getAttribute('title')).toBe('ok')
+    expect(seen.some(([p, t]) => p === 'customattr' && t === 'section')).toBe(true) // target passed
+  })
+
+  it('className / style / children stay managed even when sfp rejects everything', () => {
+    const Box = createStyled('div', { componentId: 'sc-sfp2', shouldForwardProp: () => false })`color: red;`
+    render(React.createElement(Box, { className: 'user', style: { top: '1px' }, anything: 'dropped' }, 'kid'))
+    const el = container.querySelector('div')
+    expect(el.className).toContain('sc-sfp2')
+    expect(el.className).toContain('user')
+    expect(el.style.top).toBe('1px')
+    expect(el.textContent).toBe('kid')
+    expect(el.hasAttribute('anything')).toBe(false)
+  })
+
+  it('`as` is consumed before sfp ever sees it, and still switches the tag', () => {
+    const calls = []
+    const Box = createStyled('div', {
+      componentId: 'sc-sfp3',
+      shouldForwardProp: p => {
+        calls.push(p)
+        return true
+      },
+    })`color: red;`
+    render(React.createElement(Box, { as: 'aside', title: 't' }, 'x'))
+    expect(container.querySelector('aside')).not.toBeNull()
+    expect(calls).not.toContain('as')
+  })
+
+  it('extension chains: extender inherits the base sfp (SC folded semantics)', () => {
+    const Base = createStyled('div', { componentId: 'sc-sfpb', shouldForwardProp: p => p !== 'hidea' })`color: red;`
+    const Ext = createStyled(Base, { componentId: 'sc-sfpe' })`padding: 1px;`
+    render(React.createElement(Ext, { hidea: '1', title: 'kept' }, 'x'))
+    const el = container.querySelector('div')
+    expect(el.hasAttribute('hidea')).toBe(false) // base's filter applied via inheritance
+    expect(el.getAttribute('title')).toBe('kept')
+  })
+
+  it("extension chains: the extender's OWN sfp fully replaces the inherited one", () => {
+    const Base = createStyled('div', { componentId: 'sc-sfpb2', shouldForwardProp: p => p !== 'hidea' })`color: red;`
+    const Ext = createStyled(Base, { componentId: 'sc-sfpe2', shouldForwardProp: p => p !== 'hideb' })`margin: 1px;`
+    render(React.createElement(Ext, { hidea: 'now-kept', hideb: 'x' }, 'y'))
+    const el = container.querySelector('div')
+    expect(el.hasAttribute('hideb')).toBe(false) // extender's filter
+    expect(el.getAttribute('hidea')).toBe('now-kept') // base's filter NOT layered on top
+  })
+
+  it('attrs-produced props are filtered through sfp too', () => {
+    const Field = createStyled('input', {
+      componentId: 'sc-sfp4',
+      attrs: [{ type: 'text', secret: 'x' }],
+      shouldForwardProp: p => p !== 'secret',
+    })`color: red;`
+    render(React.createElement(Field))
+    const el = container.querySelector('input')
+    expect(el.getAttribute('type')).toBe('text') // attr kept by sfp
+    expect(el.hasAttribute('secret')).toBe(false) // attr rejected by sfp
+  })
+
+  it('works through the runtime chainable factory', () => {
+    const Box = createStyled('div', { componentId: 'sc-tmp' })
+      .withConfig({ componentId: 'sc-sfp5', shouldForwardProp: p => p !== 'nope' })`color: blue;`
+    render(React.createElement(Box, { nope: '1', title: 'yes' }, 'x'))
+    const el = container.querySelector('div')
+    expect(el.className).toBe('sc-sfp5')
+    expect(el.hasAttribute('nope')).toBe(false)
+    expect(el.getAttribute('title')).toBe('yes')
+  })
+})
+
+describe('forwardProps (withConfig) — one-call prop shaping', () => {
+  it('the returned object IS the element props; styles still see the original context', () => {
+    const Stack = createStyled('div', {
+      componentId: 'sc-fp1',
+      forwardProps: ({ gap, align, ...rest }) => rest, // the Layout-component pattern
+    })`display: flex; gap: ${p => p.gap}px; align-items: ${p => p.align};`
+    render(React.createElement(Stack, { gap: 8, align: 'center', title: 'kept' }, 'x'))
+    const el = container.querySelector('div')
+    expect(el.hasAttribute('gap')).toBe(false) // stripped from the DOM
+    expect(el.hasAttribute('align')).toBe(false)
+    expect(el.getAttribute('title')).toBe('kept')
+    expect(getCss()).toContain('gap: 8px') // ...but styles resolved from the ORIGINAL props
+    expect(getCss()).toMatch(/align-items:\s*center/)
+  })
+
+  it('replaces the default filter entirely — whatever it returns is forwarded', () => {
+    const Box = createStyled('i', {
+      componentId: 'sc-fp2',
+      forwardProps: () => ({ customattr: 'yes' }), // default filter would drop this
+    })`color: red;`
+    render(React.createElement(Box, { title: 'gone-too' }, 'x'))
+    const el = container.querySelector('i')
+    expect(el.getAttribute('customattr')).toBe('yes')
+    expect(el.hasAttribute('title')).toBe(false) // not in the returned shape
+  })
+
+  it('children always come from the original element — the shape cannot lose or replace them', () => {
+    const Keep = createStyled('div', { componentId: 'sc-fp3', forwardProps: ({ $x, ...rest }) => rest })`color: red;`
+    render(React.createElement(Keep, { $x: 1 }, 'kept-kid'))
+    expect(container.querySelector('div').textContent).toBe('kept-kid')
+
+    // a children key in the shape is IGNORED (forwardProps shapes attributes;
+    // consistent between the jsx runtime and the createElement patch)
+    const Drop = createStyled('span', { componentId: 'sc-fp4', forwardProps: () => ({ children: 'ignored' }) })`color: red;`
+    render(React.createElement(Drop, null, 'original'))
+    expect(container.querySelector('span').textContent).toBe('original')
+  })
+
+  it('className from the shape merges after our generated classes; `as` still works', () => {
+    const Box = createStyled('div', {
+      componentId: 'sc-fp5',
+      forwardProps: p => ({ className: p.$extra }),
+    })`color: ${p => p.$c};`
+    render(React.createElement(Box, { as: 'nav', $c: 'red', $extra: 'user-cls' }, 'x'))
+    const el = container.querySelector('nav') // `as` consumed before shaping
+    expect(el).not.toBeNull()
+    expect(el.className).toMatch(/^sc-fp5 js-[a-z0-9]+ user-cls$/)
+  })
+
+  it('takes precedence over shouldForwardProp when both are configured', () => {
+    const Box = createStyled('div', {
+      componentId: 'sc-fp6',
+      shouldForwardProp: () => true, // would forward everything
+      forwardProps: ({ secret, ...rest }) => rest, // wins
+    })`color: red;`
+    render(React.createElement(Box, { secret: 'x', title: 'ok' }, 'y'))
+    const el = container.querySelector('div')
+    expect(el.hasAttribute('secret')).toBe(false)
+    expect(el.getAttribute('title')).toBe('ok')
+  })
+
+  it('applies ONCE at the final target; intermediate chain templates see full props', () => {
+    const Base = createStyled('div', { componentId: 'sc-fp7' })`padding: ${p => p.$pad}px;`
+    const Ext = createStyled(Base, {
+      componentId: 'sc-fp8',
+      forwardProps: ({ $pad, $tint, ...rest }) => rest,
+    })`color: ${p => p.$tint};`
+    render(React.createElement(Ext, { $pad: 6, $tint: 'teal', title: 'kept' }, 'x'))
+    const el = container.querySelector('div')
+    expect(el.hasAttribute('$pad')).toBe(false)
+    expect(el.getAttribute('title')).toBe('kept')
+    expect(getCss()).toContain('padding: 6px') // BASE template still saw $pad
+    expect(getCss()).toMatch(/color:\s*teal/) // extender template saw $tint
+  })
+
+  it('attrs feed the shaping fn (post-attrs context)', () => {
+    const Field = createStyled('input', {
+      componentId: 'sc-fp9',
+      attrs: [{ type: 'text', $meta: 'internal' }],
+      forwardProps: ({ $meta, ...rest }) => rest,
+    })`color: red;`
+    render(React.createElement(Field))
+    const el = container.querySelector('input')
+    expect(el.getAttribute('type')).toBe('text') // attr survived shaping
+    expect(el.hasAttribute('$meta')).toBe(false) // attr stripped by shaping
+  })
+
+  it('works through the runtime chainable factory', () => {
+    const Box = createStyled('div', { componentId: 'sc-fp10' })
+      .withConfig({ forwardProps: ({ $x, ...rest }) => rest })`color: red;`
+    render(React.createElement(Box, { $x: 1, title: 'ok' }, 'y'))
+    const el = container.querySelector('div')
+    expect(el.hasAttribute('$x')).toBe(false)
+    expect(el.getAttribute('title')).toBe('ok')
   })
 })
 

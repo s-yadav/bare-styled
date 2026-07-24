@@ -72,6 +72,45 @@ describe('fast transform vs babel plugin (differential)', () => {
     expect(f).toMatch(/DynFrag = _createStyled\("b", \{ [^}]*\}\)`\$\{frag\} padding: 2px;`/) // live
   })
 
+  it('withConfig forwardProps compiles in both engines (expression stays live)', () => {
+    const src = `
+      import styled from 'styled-components'
+      const Stack = styled.div.withConfig({ forwardProps: ({ gap, ...rest }) => rest })\`gap: \${p => p.gap}px;\`
+    `
+    for (const out of [babelRun(src), fastRun(src)]) {
+      expect(out).toMatch(/forwardProps:\s*\(\{\s*gap,\s*\.\.\.rest\s*\}\) => rest/)
+      expect(out).toMatch(/skeleton:|gap: \$\{p => p\.gap\}px/) // template compiled independently
+    }
+  })
+
+  it('compiles styled(Compound.Member) and styled(Comp<T>) in both engines', () => {
+    const tsxFile = path.join(__dirname, 'Sample.tsx')
+    const src = `
+      import styled from 'styled-components'
+      import { Dropdown, Tree } from 'ui'
+      const Item = styled(Dropdown.Item)\`gap: 8px;\`
+      const FileTree = styled(Tree<FileNode>)\`width: 100%;\`
+      const Deep = styled(A.B.C)\`color: red;\`
+      const Computed = styled(Dropdown[key])\`color: blue;\`
+    `
+    const b = transformSync(src, {
+      filename: tsxFile,
+      babelrc: false,
+      configFile: false,
+      plugins: [
+        [require.resolve('@babel/plugin-syntax-typescript'), { isTSX: true }],
+        [babelPlugin, {}],
+      ],
+    }).code
+    const f = fastTransform(src, { filename: tsxFile }).code
+    for (const out of [b, f]) {
+      expect(out).toMatch(/_createStyled\$*\(Dropdown\.Item, \{/)
+      expect(out).toMatch(/_createStyled\$*\(Tree, \{/) // TS instantiation unwrapped
+      expect(out).toMatch(/_createStyled\$*\(A\.B\.C, \{/)
+      expect(out).toMatch(/styled\(Dropdown\[key\]\)`color: blue;`/) // computed member bails
+    }
+  })
+
   it('withConfig parity: fixed componentId + shouldForwardProp compile, unknown keys bail (both engines)', () => {
     const src = `
       import styled from 'styled-components'
@@ -124,6 +163,32 @@ describe('fast transform vs babel plugin (differential)', () => {
     const src = `import styled from 'styled-components'\nconst _createStyled = 1\nconst A = styled.div\`color: red;\``
     const out = fastRun(src)
     expect(out).toMatch(/createStyled as _createStyled\$/)
+  })
+})
+
+describe('skeleton emit parity (value-position residuals)', () => {
+  const SRC = `
+    import styled, { css } from 'styled-components'
+    const theme = { border: '#eee' }
+    const A = styled.div\`color: \${p => p.c}; border: 1px solid \${theme.border};\`
+    const Hover = styled.a\`color: \${p => p.c}; &:hover { background: \${p => p.bg}; }\`
+    const Multi = styled.i\`margin: \${p => p.t}px \${p => p.r}px;\`
+    const Media = styled.b\`@media (max-width: \${p => p.bp}px) { padding: 2px; }\`
+    const SelectorPos = styled.u\`\${p => p.sel} { color: red; }\`
+    const BlockPos = styled.s\`\${p => p.on && 'color: red;'} padding: 1px;\`
+  `
+  it('both engines agree: skeletons for value slots, live for block/selector slots', () => {
+    const b = babelRun(SRC)
+    const f = fastRun(SRC)
+    for (const out of [b, f]) {
+      expect(out).toMatch(/skeleton:\s*"\.__jsc__\{color:var\(--js-0\);border:1px solid #eee;\}"/) // A
+      expect(out).toMatch(/skeleton:\s*"\.__jsc__\{color:var\(--js-0\);\}\.__jsc__:hover\{background:var\(--js-1\);\}"/) // Hover: stylis ran at BUILD
+      expect(out).toMatch(/skeleton:\s*"\.__jsc__\{margin:var\(--js-0\)px var\(--js-1\)px;\}"/) // Multi: both value slots
+      expect(out).toMatch(/@media \(max-width: ?var\(--js-0\)px\)/) // Media: breakpoint slot
+      // selector/block-position residuals stay LIVE (structure can change)
+      expect(out).toMatch(/SelectorPos = _?createStyled\)?\("u"[^`]*`\$\{p => p\.sel\}/)
+      expect(out).toMatch(/BlockPos = _?createStyled\)?\("s"[^`]*`\$\{p => p\.on && 'color: red;'\}/)
+    }
   })
 })
 
