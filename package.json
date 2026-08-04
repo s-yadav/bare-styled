@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.1",
   "name": "bare-styled",
   "description": "styled-components without the wrapper fiber: a build-time transform (oxc or Babel) + a JSX runtime that resolves styled components to plain host elements, compiling CSS at build time where possible.",
   "main": "packages/runtime/src/index.js",
@@ -28,7 +28,8 @@
     "vendor",
     "packages/runtime/src",
     "LICENSE.md",
-    "README.md"
+    "README.md",
+    "assets"
   ],
   "license": "MIT",
   "devDependencies": {

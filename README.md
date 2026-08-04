@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/logo.svg" alt="bare-styled — styled-components, without components" width="560" />
+</p>
+
 # bare-styled
 
 **styled-components, without components.**

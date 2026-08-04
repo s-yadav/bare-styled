@@ -1,0 +1,12 @@
+<svg width="720" height="220" viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="bare-styled — styled-components, without components">
+  <rect width="720" height="220" rx="48" fill="#0C1220"/>
+  <g transform="translate(40,24) scale(0.336)">
+    <g stroke="#3ED6C0" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <polyline points="190,168 120,256 190,344"/>
+      <polyline points="322,168 392,256 322,344"/>
+    </g>
+    <path d="M256 200 C234 232 220 252 220 276 A36 36 0 0 0 292 276 C292 252 278 232 256 200 Z" fill="#E9679C"/>
+  </g>
+  <text x="238" y="112" font-family="Arial, Helvetica, sans-serif" font-size="64" font-weight="bold"><tspan fill="#3ED6C0">bare</tspan><tspan fill="#EAF0FB">-styled</tspan></text>
+  <text x="238" y="152" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#8FA0BF">styled-components, without components</text>
+</svg>
