@@ -1,8 +1,16 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="bare-styled">
   <rect width="512" height="512" rx="112" fill="#0C1220"/>
-  <g stroke="#3ED6C0" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <polyline points="190,168 120,256 190,344"/>
-    <polyline points="322,168 392,256 322,344"/>
+  <g transform="rotate(45 190 250)">
+    <rect x="173" y="8" width="34" height="128" rx="17" fill="#3ED6C0"/>
+    <rect x="166" y="146" width="48" height="30" rx="9" fill="#229E8C"/>
+    <path d="M168 184 H212 C217 212 205 236 190 250 C175 236 163 212 168 184 Z" fill="#E9679C"/>
   </g>
-  <path d="M256 200 C234 232 220 252 220 276 A36 36 0 0 0 292 276 C292 252 278 232 256 200 Z" fill="#E9679C"/>
+  <path d="M176 240
+    C146 282 150 324 184 350
+    C214 370 252 380 300 384
+    C340 388 372 412 398 452
+    C384 430 372 391 328 374
+    C289 359 252 360 224 342
+    C196 320 192 290 202 258
+    Z" fill="#E9679C"/>
 </svg>
