@@ -8,7 +8,7 @@ import {
   getCss,
   __resetSheet,
   __getFallbackRenders,
-} from 'just-styled/runtime'
+} from 'bare-styled/runtime'
 
 global.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -89,7 +89,7 @@ describe('descriptor resolution (hash-class, no wrapper fiber)', () => {
     const Wrapped = createStyled(Inner, { componentId: 'sc-w' })`background: ${p => p.color};`
     render(React.createElement(Wrapped, { color: 'red' }))
     const leaf = container.querySelector('#leaf')
-    expect(leaf.className).toMatch(/^sc-w js-[a-z0-9]+$/) // dynamic -> componentId + hash
+    expect(leaf.className).toMatch(/^sc-w bs-[a-z0-9]+$/) // dynamic -> componentId + hash
     expect(leaf.className).not.toContain('inline')
   })
 
@@ -105,13 +105,13 @@ describe('descriptor resolution (hash-class, no wrapper fiber)', () => {
     const Box = createStyled('div', { componentId: 'sc-nb' })`${p => (p.on ? 'background: gray;' : '')}color: red;`
     render(React.createElement(Box, { on: true }, 'q'))
     const el = container.querySelector('div')
-    expect(el.className).toMatch(/^sc-nb js-[a-z0-9]+$/)
+    expect(el.className).toMatch(/^sc-nb bs-[a-z0-9]+$/)
     expect(getCss()).toMatch(/background:\s*gray/)
   })
 })
 
 describe('skeleton mode (build-compiled structure, render = substitution)', () => {
-  const SKEL = '.__jsc__{color:var(--js-0);}.__jsc__:hover{background:var(--js-1);}'
+  const SKEL = '.__bsc__{color:var(--bs-0);}.__bsc__:hover{background:var(--bs-1);}'
 
   it('renders nested skeletons with per-variant classes — no stylis at render', () => {
     const Box = createStyled('div', {
@@ -121,26 +121,26 @@ describe('skeleton mode (build-compiled structure, render = substitution)', () =
     })``
     render(React.createElement(Box, { c: 'red', bg: 'blue' }, 'x'))
     const el = container.querySelector('div')
-    const js = (el.className.match(/js-[a-z0-9]+/) || [])[0]
+    const js = (el.className.match(/bs-[a-z0-9]+/) || [])[0]
     expect(el.className).toBe('sc-sk1 ' + js)
     expect(getCss()).toContain('.' + js + '{color:red;}')
     expect(getCss()).toContain('.' + js + ':hover{background:blue;}') // structure from BUILD
   })
 
   it('same values -> same class (short-key cache); different values -> new variant', () => {
-    const Box = createStyled('div', { componentId: 'sc-sk2', skeleton: '.__jsc__{color:var(--js-0);}', vars: [p => p.c] })``
+    const Box = createStyled('div', { componentId: 'sc-sk2', skeleton: '.__bsc__{color:var(--bs-0);}', vars: [p => p.c] })``
     render(React.createElement('div', null,
       React.createElement(Box, { c: 'red', key: 1 }),
       React.createElement(Box, { c: 'red', key: 2 }),
       React.createElement(Box, { c: 'teal', key: 3 })))
-    const classes = [...container.querySelectorAll('.sc-sk2')].map(e => (e.className.match(/js-[a-z0-9]+/) || [])[0])
+    const classes = [...container.querySelectorAll('.sc-sk2')].map(e => (e.className.match(/bs-[a-z0-9]+/) || [])[0])
     expect(classes[0]).toBe(classes[1])
     expect(classes[0]).not.toBe(classes[2])
     expect((getCss().match(/color:red/g) || []).length).toBe(1) // one rule for the pair
   })
 
   it('falsy values become empty declarations; the rest of the rule survives', () => {
-    const Box = createStyled('div', { componentId: 'sc-sk3', skeleton: '.__jsc__{background:var(--js-0);color:teal;}', vars: [p => p.bg] })``
+    const Box = createStyled('div', { componentId: 'sc-sk3', skeleton: '.__bsc__{background:var(--bs-0);color:teal;}', vars: [p => p.bg] })``
     render(React.createElement(Box, null, 'x'))
     expect(getCss()).toMatch(/color:teal/)
   })
@@ -150,20 +150,20 @@ describe('skeleton mode (build-compiled structure, render = substitution)', () =
     // sibling rule (sanitization is the app's job, as with SC) — but the
     // output must be WELL-FORMED (stylis renormalized, never raw-substituted),
     // and the component's own rule must survive intact.
-    const Box = createStyled('div', { componentId: 'sc-sk4', skeleton: '.__jsc__{color:var(--js-0);}', vars: [p => p.c] })``
+    const Box = createStyled('div', { componentId: 'sc-sk4', skeleton: '.__bsc__{color:var(--bs-0);}', vars: [p => p.c] })``
     render(React.createElement(Box, { c: 'red;} .other{background:pink' }, 'x'))
-    const js = (container.querySelector('div').className.match(/js-[a-z0-9]+/) || [])[0]
+    const js = (container.querySelector('div').className.match(/bs-[a-z0-9]+/) || [])[0]
     expect(getCss()).toContain('.' + js + '{color:red;}') // main rule intact
     expect(getCss()).toContain('.other{background:pink;}') // renormalized: properly terminated
     // and the CSSOM accepted everything (nothing fell to the text fallback)
-    expect(document.head.querySelector('style[data-just-styled-fallback]')).toBeNull()
+    expect(document.head.querySelector('style[data-bare-styled-fallback]')).toBeNull()
   })
 
   it('non-function vars substitute at definition; zero fns promotes to fully static', () => {
     const spin = { name: 'kfsk', rules: '0%{opacity:0;}', getName() { return this.name } } // keyframes duck
     const Box = createStyled('div', {
       componentId: 'sc-sk5',
-      skeleton: '.__jsc__{animation:var(--js-0) 1s;color:var(--js-1);}',
+      skeleton: '.__bsc__{animation:var(--bs-0) 1s;color:var(--bs-1);}',
       vars: [spin, 'teal'],
     })``
     expect(Box.isStatic).toBe(true) // promoted — no render-time work at all
@@ -176,12 +176,12 @@ describe('skeleton mode (build-compiled structure, render = substitution)', () =
   it('mixed vars: statics substitute once, fns renumber and resolve per render', () => {
     const Box = createStyled('div', {
       componentId: 'sc-sk6',
-      skeleton: '.__jsc__{border:1px solid var(--js-0);color:var(--js-1);}',
+      skeleton: '.__bsc__{border:1px solid var(--bs-0);color:var(--bs-1);}',
       vars: ['#eee', p => p.c],
     })``
     expect(Box.isStatic).toBe(false)
     render(React.createElement(Box, { c: 'red' }, 'x'))
-    const js = (container.querySelector('div').className.match(/js-[a-z0-9]+/) || [])[0]
+    const js = (container.querySelector('div').className.match(/bs-[a-z0-9]+/) || [])[0]
     expect(getCss()).toContain('.' + js + '{border:1px solid #eee;color:red;}')
   })
 })
@@ -426,7 +426,7 @@ describe('forwardProps (withConfig) — one-call prop shaping', () => {
     render(React.createElement(Box, { as: 'nav', $c: 'red', $extra: 'user-cls' }, 'x'))
     const el = container.querySelector('nav') // `as` consumed before shaping
     expect(el).not.toBeNull()
-    expect(el.className).toMatch(/^sc-fp5 js-[a-z0-9]+ user-cls$/)
+    expect(el.className).toMatch(/^sc-fp5 bs-[a-z0-9]+ user-cls$/)
   })
 
   it('takes precedence over shouldForwardProp when both are configured', () => {
@@ -489,7 +489,7 @@ describe('forwardRef fallback detection (fiber-win diagnostics)', () => {
       render(React.createElement('div', null, React.createElement(Box, { key: 1 }), React.createElement(Box, { key: 2 })))
       expect(container.querySelectorAll('.sc-fb')).toHaveLength(2) // still renders correctly
       expect(__getFallbackRenders()).toBe(before + 2) // each fallback render counted
-      const ours = warn.mock.calls.filter(c => String(c[0]).includes('[just-styled]'))
+      const ours = warn.mock.calls.filter(c => String(c[0]).includes('[bare-styled]'))
       expect(ours).toHaveLength(1) // warned once per component, not per render
       expect(String(ours[0][0])).toContain('FbBox')
     } finally {

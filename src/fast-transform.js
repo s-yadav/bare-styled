@@ -1,4 +1,4 @@
-// just-styled fast transform — oxc-parser + magic-string. Functionally
+// bare-styled fast transform — oxc-parser + magic-string. Functionally
 // equivalent to the Babel plugin but ~an order of magnitude faster: one oxc
 // parse, surgical string splices. Deliberate scope vs Babel (bail is always
 // safe — the template just stays live or the caller falls back to Babel):
@@ -53,7 +53,7 @@ function ensureParser() {
   }
   parseSync = mod.parseSync || (mod.default && mod.default.parseSync)
   if (typeof parseSync !== 'function') {
-    throw new Error('just-styled fast-transform: could not load oxc-parser (is it installed?)')
+    throw new Error('bare-styled fast-transform: could not load oxc-parser (is it installed?)')
   }
 }
 
@@ -207,7 +207,7 @@ function staticRawOfTemplate(quasi, ctx, depth) {
 }
 
 // Template analysis — MUST match the Babel engine's analyzeTemplate.
-// static / skeleton (VALUE-position residuals -> var(--js-N)) / live
+// static / skeleton (VALUE-position residuals -> var(--bs-N)) / live
 // (block/selector-position residual).
 function analyzeTemplate(quasi, ctx) {
   const quasis = quasi.quasis
@@ -231,7 +231,7 @@ function analyzeTemplate(quasi, ctx) {
       raw += piece
       scanner.feed(piece)
     } else if (scanner.inValue()) {
-      raw += 'var(--js-' + vars.length + ')'
+      raw += 'var(--bs-' + vars.length + ')'
       vars.push(exprs[i])
     } else {
       return { kind: 'live' }
@@ -332,7 +332,7 @@ function parseChain(tagIn, styledNames) {
       } else if (key === 'shouldForwardProp') {
         shouldForwardProp = prop.value
       } else if (key === 'forwardProps') {
-        // just-styled extension: one call shaping all element props.
+        // bare-styled extension: one call shaping all element props.
         forwardProps = prop.value
       } else {
         return null // unknown withConfig option -> real styled-components
@@ -423,7 +423,7 @@ export function fastTransform(code, options = {}) {
     displayName: useDisplayName = true,
     vendorPrefixes = false,
     topLevelImportPaths = [],
-    runtimeImportPath = 'just-styled/runtime',
+    runtimeImportPath = 'bare-styled/runtime',
     namespace = '',
     meaninglessFileNames = ['index'],
   } = options
@@ -434,7 +434,7 @@ export function fastTransform(code, options = {}) {
   const parsed = parseSync(filename, code)
   if (parsed.errors && parsed.errors.length) {
     const err = new Error(
-      'just-styled fast-transform parse error: ' +
+      'bare-styled fast-transform parse error: ' +
         (parsed.errors[0].message || String(parsed.errors[0]))
     )
     err.parseErrors = parsed.errors
@@ -519,7 +519,7 @@ export function fastTransform(code, options = {}) {
       props.push('css: ' + JSON.stringify(compiled))
       s.overwrite(t.quasi.start, t.quasi.end, '``')
     } else if (analysis.kind === 'skeleton') {
-      const compiled = serialize(compile('.__jsc__{' + analysis.raw + '}'), mw)
+      const compiled = serialize(compile('.__bsc__{' + analysis.raw + '}'), mw)
       props.push('skeleton: ' + JSON.stringify(compiled))
       props.push('vars: [' + analysis.vars.map(v => code.slice(v.start, v.end)).join(', ') + ']')
       s.overwrite(t.quasi.start, t.quasi.end, '``')
@@ -568,7 +568,7 @@ export function fastTransform(code, options = {}) {
       // shapes (unknown withConfig keys, non-literal ids, ...) and
       // function-scope definitions. A non-empty list in a file that ALSO
       // compiles descriptors means MIXED rendering — cross-sheet cascade ties
-      // between styled-components and just-styled are not ordered, so
+      // between styled-components and bare-styled are not ordered, so
       // overrides between the two halves may not apply.
       bailed: targets.bailed,
       fnScoped: targets.filter(t => t.fnDepth > 0).map(t => t.nameHint || '(anonymous)'),

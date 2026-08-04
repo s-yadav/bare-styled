@@ -26,13 +26,13 @@ describe('sheet without a DOM', () => {
 
   it('renderStaticStyles wraps the css in a style tag for SSR', () => {
     sheet.registerRule(0, 'js-aaa', '.js-aaa{color:red;}')
-    expect(sheet.renderStaticStyles()).toBe('<style data-just-styled>.js-aaa{color:red;}</style>')
+    expect(sheet.renderStaticStyles()).toBe('<style data-bare-styled>.js-aaa{color:red;}</style>')
   })
 
   it('resets cleanly for the next test', () => {
     sheet.registerRule(0, 'js-aaa', '.js-aaa{color:red;}')
     sheet.__resetSheet()
     expect(sheet.getCss()).toBe('')
-    expect(sheet.renderStaticStyles()).toBe('<style data-just-styled></style>')
+    expect(sheet.renderStaticStyles()).toBe('<style data-bare-styled></style>')
   })
 })

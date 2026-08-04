@@ -1,10 +1,10 @@
 /**
  * @jest-environment jsdom
  *
- * Confirms the pivot: just-styled now generates a distinct HASH CLASS per
+ * Confirms the pivot: bare-styled now generates a distinct HASH CLASS per
  * distinct resolved style (styled-components' model), not a CSS variable per
  * element. So both libraries track cardinality identically — few distinct
- * values -> few classes; unique-per-cell -> a class per cell — and just-styled
+ * values -> few classes; unique-per-cell -> a class per cell — and bare-styled
  * puts NO inline style/var on the cells.
  */
 import { transform } from '@babel/core'
@@ -13,22 +13,22 @@ import path from 'path'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import plugin from '../../src/js-transform'
-import * as runtime from 'just-styled/runtime'
+import * as runtime from 'bare-styled/runtime'
 
 const widgetSrc = readFileSync(path.join(__dirname, '../../profiling/widget/widget.jsx'), 'utf8')
 global.IS_REACT_ACT_ENVIRONMENT = true
 
-function build(useJustStyled) {
+function build(useBareStyled) {
   const plugins = [require.resolve('@babel/plugin-transform-modules-commonjs')]
-  if (useJustStyled) plugins.unshift(plugin)
+  if (useBareStyled) plugins.unshift(plugin)
   const { code } = transform(widgetSrc, {
     filename: path.join(__dirname, 'widget.jsx'), babelrc: false, configFile: false,
-    presets: [[require.resolve('@babel/preset-react'), { runtime: 'automatic', importSource: useJustStyled ? 'just-styled' : 'react', development: false }]],
+    presets: [[require.resolve('@babel/preset-react'), { runtime: 'automatic', importSource: useBareStyled ? 'bare-styled' : 'react', development: false }]],
     plugins,
   })
   const requireShim = request => {
-    if (request === 'just-styled/runtime') return runtime
-    if (request === 'just-styled/runtime/patch') { runtime.installCreateElementPatch(); return {} }
+    if (request === 'bare-styled/runtime') return runtime
+    if (request === 'bare-styled/runtime/patch') { runtime.installCreateElementPatch(); return {} }
     return require(request)
   }
   const mod = { exports: {} }
@@ -67,7 +67,7 @@ test('styled-components: cardinality tracked by generated classes', () => {
   expect(stats(SC, 'unique').distinctClasses).toBeGreaterThan(ROWS * COLS * 0.8)
 })
 
-test('just-styled: same class-based cardinality, and NO inline var/style on cells', () => {
+test('bare-styled: same class-based cardinality, and NO inline var/style on cells', () => {
   const JS = build(true)
   const few = stats(JS, 'few')
   const uniq = stats(JS, 'unique')

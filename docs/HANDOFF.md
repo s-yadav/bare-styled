@@ -1,18 +1,18 @@
-# just-styled — session handoff
+# bare-styled — session handoff
 
 For continuing work in a fresh session. Self-contained: assume no prior context.
 Last updated: July 11, 2026. State: 78 tests / 13 suites passing.
 
 ## What this is
 
-A CSS-in-JS library (`~/github/just-styled`) that keeps styled-components'
+A CSS-in-JS library (`~/github/bare-styled`) that keeps styled-components'
 authoring API and styling model but renders each styled component as a **plain
 host element with no wrapper fiber** — resolved at JSX time, before React sees
 it. Being integrated into `~/projects/prophecy-frontend1` (Vite +
 `@vitejs/plugin-react` v6/oxc/Rolldown, React 18.3.1, SC 6.1.11, pnpm
 monorepo). Prophecy uses `styled(StyledComponent)` composition heavily.
 
-**Package identity (recently merged):** ONE npm package, `just-styled` v1.0.0,
+**Package identity (recently merged):** ONE npm package, `bare-styled` v1.0.0,
 at the repo ROOT. The historical fork name `babel-plugin-styled-components` is
 gone. Exports map:
 
@@ -20,13 +20,13 @@ gone. Exports map:
 |---|---|---|
 | `.` / `./runtime` | `packages/runtime/src/index.js` | runtime (createStyled, getCss, setVendorPrefixes, __getFallbackRenders) |
 | `./runtime/patch` | `packages/runtime/src/patch.js` | classic createElement monkeypatch (side-effect) |
-| `./jsx-runtime`, `./jsx-dev-runtime` | `packages/runtime/src/jsx-*.js` | wrapped automatic JSX runtime (use `jsxImportSource: 'just-styled'`) |
-| `./transform` | `lib/index.js` | Babel plugin (reference engine) — pass the FUNCTION to babel, never the name string (babel would normalize to `babel-plugin-just-styled`) |
+| `./jsx-runtime`, `./jsx-dev-runtime` | `packages/runtime/src/jsx-*.js` | wrapped automatic JSX runtime (use `jsxImportSource: 'bare-styled'`) |
+| `./transform` | `lib/index.js` | Babel plugin (reference engine) — pass the FUNCTION to babel, never the name string (babel would normalize to `babel-plugin-bare-styled`) |
 | `./fast-transform` | `lib/fast-transform.js` | oxc engine (default; 8.5× faster) |
-| `./vite` | `lib/vite-plugin.js` + `types/vite-plugin.d.ts` | the Vite plugin (engine selection, babel fallback, JUST_STYLED_DEBUG) |
+| `./vite` | `lib/vite-plugin.js` + `types/vite-plugin.d.ts` | the Vite plugin (engine selection, babel fallback, BARE_STYLED_DEBUG) |
 
-`packages/runtime` is internally named `@just-styled/runtime` (pnpm workspace
-can't have two packages named `just-styled`); nothing resolves it by name —
+`packages/runtime` is internally named `@bare-styled/runtime` (pnpm workspace
+can't have two packages named `bare-styled`); nothing resolves it by name —
 jest moduleNameMapper and the profiling build scripts map by path.
 
 ## Runtime model (hash-class)
@@ -45,7 +45,7 @@ jest moduleNameMapper and the profiling build scripts map by path.
   runtime too. Only `css`/`keyframes`/`createGlobalStyle` helpers remain
   untouched → real styled-components (intended fallback).
 - Descriptor = `React.forwardRef` object, self-referenced under
-  `Symbol.for('just-styled')` (`isDescriptor: type[IS_STYLED] === type`).
+  `Symbol.for('bare-styled')` (`isDescriptor: type[IS_STYLED] === type`).
   The wrapped JSX runtime resolves descriptors to host elements at
   element-creation time; the forwardRef body is only a fallback (it counts
   via `__getFallbackRenders()` and dev-warns once per component — should be 0;
@@ -89,8 +89,8 @@ jest moduleNameMapper and the profiling build scripts map by path.
   positionally at their group's end (Fenwick tree for O(log G) offsets), so
   base rules always precede `styled(Component)` extender rules regardless of
   render order. No cross-component dedup (a rule belongs to one group; matches
-  SC). CSSOM `insertRule` into `<style data-just-styled>`; rejected rules go
-  to a SEPARATE `<style data-just-styled-fallback>` (text on the main element
+  SC). CSSOM `insertRule` into `<style data-bare-styled>`; rejected rules go
+  to a SEPARATE `<style data-bare-styled-fallback>` (text on the main element
   would re-parse it and wipe the CSSOM sheet — was a severe bug).
 - **Keyframes ARE supported:** resolveValue duck-types Keyframes
   (`{name, rules, getName}`, identical across SC v5/v6 and duplicate copies),
@@ -129,25 +129,25 @@ identically).
   fallback `vendor/oxc-parser.cjs` (esbuild CJS bundle, binding external;
   regenerate with `node scripts/bundle-oxc.js` after oxc bumps;
   import.meta.url handled via define+banner).
-- Vite plugin (`src/vite-plugin.js` → `just-styled/vite`): gate
+- Vite plugin (`src/vite-plugin.js` → `bare-styled/vite`): gate
   `/\bstyled\s*[.(\`<]/` → oxc engine → per-file babel fallback on throw.
   Lazy loads everything; @babel/core is an optional peer. Types are
   hand-maintained in `types/vite-plugin.d.ts` (structural, no vite dep).
 
 ## Prophecy integration state
 
-- `package.json`: ONE link — `"just-styled": "link:../../github/just-styled"`
+- `package.json`: ONE link — `"bare-styled": "link:../../github/bare-styled"`
   (dependencies). Old runtime link + `babel-plugin-styled-components` devDep
   REMOVED.
-- `frontend/vite.config.ts`: `import { justStyled } from 'just-styled/vite'`;
-  `justStyled({ displayName: !isProd })`;
-  `react({ jsxImportSource: 'just-styled' })`; `resolve.dedupe` includes
+- `frontend/vite.config.ts`: `import { bareStyled } from 'bare-styled/vite'`;
+  `bareStyled({ displayName: !isProd })`;
+  `react({ jsxImportSource: 'bare-styled' })`; `resolve.dedupe` includes
   react* AND `styled-components` (dup-SC caused the keyframes crash:
   runtime's css() from checkout's 6.4.3 failed `instanceof` on prophecy's
   6.1.11 Keyframes → uncaught Keyframes.toString throw at module eval);
-  optimizeDeps includes just-styled + subpath entries; `@prophecy/ui-v3`
+  optimizeDeps includes bare-styled + subpath entries; `@prophecy/ui-v3`
   aliased to src in all modes (its tsc build never runs the transform).
-- `frontend/scripts/just-styled-plugin.ts`: now a re-export shim → `git rm`
+- `frontend/scripts/bare-styled-plugin.ts`: now a re-export shim → `git rm`
   candidate.
 - `JUST_STYLED_INTEGRATION.md`: current (rewritten for hash-class model,
   keyframes support, single link, engine docs).
@@ -181,21 +181,21 @@ preserves template whitespace (tests are whitespace-tolerant there).
 
 ## Pending / user-machine-only steps
 
-1. `cd ~/github/just-styled && pnpm install` (new deps: oxc-parser,
+1. `cd ~/github/bare-styled && pnpm install` (new deps: oxc-parser,
    magic-string, @babel/plugin-syntax-typescript promoted to deps;
    @emotion/is-prop-valid now root dep) — then `pnpm build`.
 2. `cd ~/projects/prophecy-frontend1 && pnpm install` (link rewiring) then
    `rm -rf frontend/node_modules/.vite` then
-   `JUST_STYLED_DEBUG=1 pnpm --filter frontend start`.
+   `BARE_STYLED_DEBUG=1 pnpm --filter frontend start`.
 3. Smoke checklist: elements carry `sc-*` (static) / `sc-* js-*` (dynamic)
-   classes; `<style data-just-styled>` in head; no wrapper components in React
-   DevTools; console free of `[just-styled] ... forwardRef fallback` warnings;
+   classes; `<style data-bare-styled>` in head; no wrapper components in React
+   DevTools; console free of `[bare-styled] ... forwardRef fallback` warnings;
    `.attrs`/`.withConfig` components unchanged (SC classes).
 4. git housekeeping (sandbox cannot delete files): `git rm` dead stubs
    (`packages/runtime/src/flatten.js`, skipped e2e tests, old
    babel-plugin-styled-components visitors if any remain), `git mv
    test/runtime/folding.test.js test/runtime/ordering.test.js`, `git rm
-   frontend/scripts/just-styled-plugin.ts` (prophecy) once nothing imports it.
+   frontend/scripts/bare-styled-plugin.ts` (prophecy) once nothing imports it.
 5. Possible next work: `packages/theme` src-alias treatment (styled defs in
    theme package currently uncompiled in prod); browser-harness DevTools
    recording for recalc/layout numbers; `groupStart` etc. only if profiling
@@ -203,7 +203,7 @@ preserves template whitespace (tests are whitespace-tolerant there).
 
 ## Sandbox environment facts (critical if working in Cowork again)
 
-- Mounts: just-styled and prophecy-frontend1 both mounted; bash paths differ
+- Mounts: bare-styled and prophecy-frontend1 both mounted; bash paths differ
   from file-tool paths (see session env). **The mount BLOCKS file deletion**
   (rm/unlink/rename-aside all EPERM) — only overwrite/truncate work. Dead
   files must be git-rm'd on the real machine.
@@ -217,7 +217,7 @@ preserves template whitespace (tests are whitespace-tolerant there).
   (npx sometimes resolves a stale wrong `babel` package).
 - jest: `npx jest` works; oxc loads via vendor/oxc-parser.cjs there.
 - prophecy's link symlinks resolve on the user's machine layout
-  (`../../github/just-styled`), NOT inside the sandbox mounts — test package
+  (`../../github/bare-styled`), NOT inside the sandbox mounts — test package
   resolution via a /tmp consumer dir with a manual symlink instead.
 - styled-components versions: prophecy 6.1.11, fork repo 6.4.3 — SC 6.1
   defines non-writable toString on components; SC v6 does NOT vendor-prefix.

@@ -1,4 +1,4 @@
-// just-styled babel transform: rewrite a `styled` tagged template into a
+// bare-styled babel transform: rewrite a `styled` tagged template into a
 // `createStyled(component, config)`...`` call, precompiling what it can
 // (static/skeleton) and keeping the rest live. Simple forms compile —
 // styled.tag / styled('tag') / styled(Ident) plus .attrs/.withConfig chains;
@@ -15,10 +15,10 @@ import prefixLeadingDigit from './utils/prefixDigit'
 import { getFileHash } from './utils/fileHash'
 import { useDisplayName, useRuntimeImportPath, useMeaninglessFileNames, useNamespace, useVendorPrefixes } from './utils/options'
 
-const CREATE_IMPORT_NAME = 'just-styled-create-name'
-const PATCH_IMPORT_ADDED = 'just-styled-patch-added'
-const POSITION = 'just-styled-position'
-const STYLED_IDS = 'just-styled-component-ids' // VariableDeclarator node -> componentId
+const CREATE_IMPORT_NAME = 'bare-styled-create-name'
+const PATCH_IMPORT_ADDED = 'bare-styled-patch-added'
+const POSITION = 'bare-styled-position'
+const STYLED_IDS = 'bare-styled-component-ids' // VariableDeclarator node -> componentId
 
 // Guard against pathological fragment-in-fragment nesting while resolving.
 const MAX_STATIC_DEPTH = 8
@@ -87,7 +87,7 @@ const parseChain = (t, tagIn) => {
       } else if (key === 'shouldForwardProp') {
         shouldForwardProp = prop.value
       } else if (key === 'forwardProps') {
-        // just-styled extension: one call shaping all element props
+        // bare-styled extension: one call shaping all element props
         forwardProps = prop.value
       } else {
         return null // unknown withConfig option -> real styled-components
@@ -246,7 +246,7 @@ const staticRawOfTemplate = (t, path, state, depth) => {
 const tryStaticRaw = (t, path, state) => staticRawOfTemplate(t, path, state, 0)
 
 // Template analysis. Outcomes: 'static' (all resolved — precompile whole
-// rule), 'skeleton' (residuals only in declaration VALUE slots -> var(--js-N)
+// rule), 'skeleton' (residuals only in declaration VALUE slots -> var(--bs-N)
 // placeholders; structure fixed, stylis runs at build), 'live' (residual in
 // block/selector position — structure can change per render).
 const analyzeTemplate = (t, path, state) => {
@@ -273,7 +273,7 @@ const analyzeTemplate = (t, path, state) => {
       raw += piece
       scanner.feed(piece)
     } else if (scanner.inValue()) {
-      raw += 'var(--js-' + vars.length + ')'
+      raw += 'var(--bs-' + vars.length + ')'
       vars.push(exprPaths[i].node)
       // a value token was emitted; scanner state stays "in value"
     } else {
@@ -379,7 +379,7 @@ export default function ({ types: t }) {
 
         // Build-time compilation (vendor prefixing opt-in, SC v6 parity):
         // static ships a finished `css` rule; skeleton runs stylis HERE over a
-        // .__jsc__ token and ships `skeleton` + `vars` (live expressions in
+        // .__bsc__ token and ships `skeleton` + `vars` (live expressions in
         // placeholder order); live keeps the template for the runtime flatten.
         const mw = middleware(useVendorPrefixes(state) ? [prefixer, stringify] : [stringify])
         const analysis = analyzeTemplate(t, path, state)
@@ -388,7 +388,7 @@ export default function ({ types: t }) {
           configProps.push(t.objectProperty(t.identifier('css'), t.stringLiteral(compiled)))
           path.node.quasi = t.templateLiteral([t.templateElement({ raw: '', cooked: '' })], [])
         } else if (analysis.kind === 'skeleton') {
-          const compiled = serialize(compile('.__jsc__{' + analysis.raw + '}'), mw)
+          const compiled = serialize(compile('.__bsc__{' + analysis.raw + '}'), mw)
           configProps.push(t.objectProperty(t.identifier('skeleton'), t.stringLiteral(compiled)))
           configProps.push(
             t.objectProperty(

@@ -3,7 +3,7 @@
  *
  * Real-world app benchmark: a full dashboard (top bar + sidebar nav + stat cards
  * + a large data table) rendered once through real styled-components and once
- * through just-styled, mounted and re-rendered in jsdom. This is the
+ * through bare-styled, mounted and re-rendered in jsdom. This is the
  * "everything at once" test — it exercises every path the runtime special-cases:
  *
  *   - static chrome (AppShell, TopBar, Sidebar, Th, ...) AND static cells at row
@@ -23,11 +23,11 @@
  *   - `as` polymorphism (Button rendered as <a>).
  *   - `${Comp}` component selector (Card targeting TrendBadge).
  *   - `.attrs(...)` — left untouched by the plugin, so it runs on real
- *     styled-components even in the just-styled build (the intended fallback).
+ *     styled-components even in the bare-styled build (the intended fallback).
  *
  * jsdom has no layout/paint, so this isolates the JS/React cost — where the
  * structural win lives: styled-components mounts a wrapper fiber (+ hooks +
- * generateAndInjectStyles) per styled element; just-styled resolves each to a
+ * generateAndInjectStyles) per styled element; bare-styled resolves each to a
  * plain host element. For recalc/layout/paint, use the browser harness.
  *
  * Run:  npx jest test/perf/dashboard.perf.test.js
@@ -39,9 +39,9 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import plugin from '../../src/js-transform'
 import { fastTransform } from '../../src/fast-transform'
-import * as runtime from 'just-styled/runtime'
+import * as runtime from 'bare-styled/runtime'
 
-// Which engine compiles the just-styled variant: 'babel' (default) or 'oxc'.
+// Which engine compiles the bare-styled variant: 'babel' (default) or 'oxc'.
 // Lets the SAME runtime benchmark verify that oxc-compiled output performs
 // identically to babel-compiled output.
 const ENGINE = process.env.JS_ENGINE || 'babel'
@@ -54,8 +54,8 @@ const ITERS = +process.env.DASH_ITERS || 20
 // (all-static rows), 'dynamic' (the old all-dynamic rows).
 const MODE = process.env.DASH_MODE || 'mixed'
 
-// Escaped \${…} are styled-components interpolations (flattened by just-styled);
-// {…} are ordinary JSX expressions. No ThemeProvider (a known just-styled gap) —
+// Escaped \${…} are styled-components interpolations (flattened by bare-styled);
+// {…} are ordinary JSX expressions. No ThemeProvider (a known bare-styled gap) —
 // a module `theme` constant instead, which resolves statically. Transient ($)
 // props are dropped from the DOM by both libraries (SC convention / emotion
 // is-prop-valid), so neither leaks unknown attributes onto host nodes.
@@ -222,11 +222,11 @@ const SOURCE = `
   }
 `
 
-function buildApp(useJustStyled) {
-  const filename = path.join(__dirname, (useJustStyled ? 'js' : 'sc') + '-dashboard.jsx')
+function buildApp(useBareStyled) {
+  const filename = path.join(__dirname, (useBareStyled ? 'js' : 'sc') + '-dashboard.jsx')
   let source = SOURCE
   const plugins = [require.resolve('@babel/plugin-transform-modules-commonjs')]
-  if (useJustStyled) {
+  if (useBareStyled) {
     if (ENGINE === 'oxc') {
       // oxc engine compiles the styled templates first; babel below only does
       // JSX/modules — exactly the split the Vite plugin uses in production.
@@ -243,8 +243,8 @@ function buildApp(useJustStyled) {
     plugins,
   })
   const requireShim = request => {
-    if (request === 'just-styled/runtime') return runtime
-    if (request === 'just-styled/runtime/patch') { runtime.installCreateElementPatch(); return {} }
+    if (request === 'bare-styled/runtime') return runtime
+    if (request === 'bare-styled/runtime/patch') { runtime.installCreateElementPatch(); return {} }
     return require(request)
   }
   const mod = { exports: {} }
@@ -288,7 +288,7 @@ function bench(App, countRules) {
 
 afterEach(() => { runtime.__resetSheet(); document.body.innerHTML = ''; document.head.innerHTML = '' })
 
-test(`dashboard mount/re-render: styled-components vs just-styled (${ROWS} rows)`, () => {
+test(`dashboard mount/re-render: styled-components vs bare-styled (${ROWS} rows)`, () => {
   const SCApp = buildApp(false)
   runtime.__resetSheet()
   const JSApp = buildApp(true)
@@ -303,12 +303,12 @@ test(`dashboard mount/re-render: styled-components vs just-styled (${ROWS} rows)
   const pct = (a, b) => (((a - b) / a) * 100).toFixed(0) + '%'
   // eslint-disable-next-line no-console
   console.log(
-    `\ndashboard: styled-components vs just-styled[${ENGINE}] — ${ROWS} rows, cells=${MODE} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
+    `\ndashboard: styled-components vs bare-styled[${ENGINE}] — ${ROWS} rows, cells=${MODE} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
     `\n                 mount      re-render` +
     `\n  styled-comp   ${sc.mount.toFixed(2).padStart(6)}     ${sc.update.toFixed(2).padStart(6)}` +
-    `\n  just-styled   ${js.mount.toFixed(2).padStart(6)}     ${js.update.toFixed(2).padStart(6)}` +
-    `\n  delta         ${pct(sc.mount, js.mount).padStart(6)}     ${pct(sc.update, js.update).padStart(6)}  (positive = just-styled faster)` +
-    `\n  just-styled generated ${js.ruleCount} dynamic (js-) classes for ${sc.nodeCount} nodes — per-component dedup\n`
+    `\n  bare-styled   ${js.mount.toFixed(2).padStart(6)}     ${js.update.toFixed(2).padStart(6)}` +
+    `\n  delta         ${pct(sc.mount, js.mount).padStart(6)}     ${pct(sc.update, js.update).padStart(6)}  (positive = bare-styled faster)` +
+    `\n  bare-styled generated ${js.ruleCount} dynamic (bs-) classes for ${sc.nodeCount} nodes — per-component dedup\n`
   )
 
   expect(sc.mount).toBeGreaterThan(0)

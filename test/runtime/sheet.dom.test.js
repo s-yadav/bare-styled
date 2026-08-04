@@ -5,7 +5,7 @@ beforeEach(() => {
   sheet.__resetSheet()
 })
 
-const tag = () => document.head.querySelector('style[data-just-styled]')
+const tag = () => document.head.querySelector('style[data-bare-styled]')
 const domCss = () => {
   const s = tag().sheet
   let out = ''
@@ -14,17 +14,17 @@ const domCss = () => {
 }
 
 describe('sheet in the browser (CSSOM insertRule)', () => {
-  it('injects into a single <style data-just-styled> via the CSSOM', () => {
+  it('injects into a single <style data-bare-styled> via the CSSOM', () => {
     sheet.registerRule(0, 'js-aaa', '.js-aaa{color:red;}')
     sheet.registerRule(0, 'js-bbb', '.js-bbb{color:blue;}')
-    expect(document.head.querySelectorAll('style[data-just-styled]')).toHaveLength(1)
+    expect(document.head.querySelectorAll('style[data-bare-styled]')).toHaveLength(1)
     expect(tag().sheet.cssRules).toHaveLength(2)
     expect(domCss()).toContain('.js-aaa{color:red;}')
     expect(domCss()).toContain('.js-bbb{color:blue;}')
   })
 
   it('inserts positionally by group even when a higher group registers first', () => {
-    sheet.registerRule(2, 'js-hi', '.js-hi{z:2;}')
+    sheet.registerRule(2, 'bs-hi', '.js-hi{z:2;}')
     sheet.registerRule(0, 'js-lo', '.js-lo{z:0;}')
     sheet.registerRule(1, 'js-mid', '.js-mid{z:1;}')
     // DOM order must be lo, mid, hi (group 0,1,2) regardless of registration order
@@ -39,7 +39,7 @@ describe('sheet in the browser (CSSOM insertRule)', () => {
   })
 
   it('splits a multi-rule css string into separate CSSOM rules', () => {
-    sheet.registerRule(0, 'js-h', '.js-h{color:red;}.js-h:hover{color:blue;}')
+    sheet.registerRule(0, 'bs-h', '.js-h{color:red;}.js-h:hover{color:blue;}')
     expect(tag().sheet.cssRules).toHaveLength(2)
   })
 
@@ -74,11 +74,11 @@ describe('sheet in the browser (CSSOM insertRule)', () => {
     // main element has NO text content (text would re-parse + wipe the sheet in browsers)
     expect(tag().textContent).toBe('')
     // rejected rule landed in the fallback element as text
-    const fb = document.head.querySelector('style[data-just-styled-fallback]')
+    const fb = document.head.querySelector('style[data-bare-styled-fallback]')
     expect(fb).not.toBeNull()
     expect(fb.textContent).toBe('garbage-not-a-rule')
     // fallback element is removed on reset too
     sheet.__resetSheet()
-    expect(document.head.querySelector('style[data-just-styled-fallback]')).toBeNull()
+    expect(document.head.querySelector('style[data-bare-styled-fallback]')).toBeNull()
   })
 })

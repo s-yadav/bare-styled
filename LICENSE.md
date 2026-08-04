@@ -1,6 +1,9 @@
 MIT License
 
-Copyright (c) 2016-present Vladimir Danchenkov and Maximilian Stoiber
+Copyright (c) 2026 Sudhanshu Yadav
+
+Portions of the transform utilities are derived from babel-plugin-styled-components,
+Copyright (c) 2016-present Vladimir Danchenkov and Maximilian Stoiber (MIT).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

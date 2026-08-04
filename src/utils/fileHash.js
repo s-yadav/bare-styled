@@ -5,7 +5,7 @@ import hash from './hash'
 // A stable per-file hash (module name + relative path, or file contents when
 // there's no module root) — the seed for componentIds. Cached per file since
 // the fs work is costly. Extracted from the original babel-plugin-styled-
-// components displayNameAndId visitor; it's the only piece just-styled's
+// components displayNameAndId visitor; it's the only piece bare-styled's
 // transform still needs from that (now removed) machinery.
 
 const findModuleRoot = filename => {

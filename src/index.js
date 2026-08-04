@@ -1,4 +1,4 @@
-// just-styled plugin entry.
+// bare-styled plugin entry.
 //
 // Decoupled from babel-plugin-styled-components: the transform now only rewrites
 // `styled` tagged templates into `createStyled(...)` calls (keeping the template

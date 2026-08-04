@@ -10,7 +10,7 @@ import path from 'path'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import plugin from '../../src/js-transform'
-import * as runtime from 'just-styled/runtime'
+import * as runtime from 'bare-styled/runtime'
 
 global.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -23,8 +23,8 @@ const evaluate = source => {
     plugins: [plugin, require.resolve('@babel/plugin-transform-modules-commonjs')],
   })
   const requireShim = request => {
-    if (request === 'just-styled/runtime') return runtime
-    if (request === 'just-styled/runtime/patch') { runtime.installCreateElementPatch(); return {} }
+    if (request === 'bare-styled/runtime') return runtime
+    if (request === 'bare-styled/runtime/patch') { runtime.installCreateElementPatch(); return {} }
     return require(request)
   }
   const mod = { exports: {} }
@@ -70,7 +70,7 @@ test('prop-dependent styles produce a hash-class carrying the resolved value', (
   `)
   act(() => createRoot(container).render(React.createElement(App, { color: 'tomato' })))
   const el = container.querySelector('button')
-  expect(el.className).toMatch(/^sc-[a-z0-9]+-0 js-[a-z0-9]+$/)
+  expect(el.className).toMatch(/^sc-[a-z0-9]+-0 bs-[a-z0-9]+$/)
   expect(el.getAttribute('style')).toBeNull() // no css variables anymore
   expect(runtime.getCss()).toMatch(/color:\s*tomato/)
 })
@@ -125,7 +125,7 @@ test('conditional/block interpolation no longer bails — resolves inline', () =
   `)
   act(() => createRoot(container).render(React.createElement(App, { on: true })))
   const el = container.querySelector('div')
-  expect(el.className).toMatch(/^sc-[a-z0-9]+-0 js-[a-z0-9]+$/)
+  expect(el.className).toMatch(/^sc-[a-z0-9]+-0 bs-[a-z0-9]+$/)
   expect(runtime.getCss()).toMatch(/background:\s*gray/)
   expect(el.textContent).toBe('y')
 })

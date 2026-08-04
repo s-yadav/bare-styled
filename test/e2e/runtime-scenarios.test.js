@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  *
  * Runtime scenarios on the hash-class model, compiled with the plugin and JSX
- * routed through just-styled's automatic runtime (the real prophecy setup):
+ * routed through bare-styled's automatic runtime (the real prophecy setup):
  * styled(Component) class forwarding, styled component used as a nested selector,
  * and key-after-spread (createElement fallback from the import-source root).
  */
@@ -11,7 +11,7 @@ import path from 'path'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import plugin from '../../src/js-transform'
-import * as runtime from 'just-styled/runtime'
+import * as runtime from 'bare-styled/runtime'
 
 global.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -20,12 +20,12 @@ const evaluate = source => {
     filename: path.join(__dirname, 'app.jsx'),
     babelrc: false,
     configFile: false,
-    presets: [[require.resolve('@babel/preset-react'), { runtime: 'automatic', importSource: 'just-styled', development: false }]],
+    presets: [[require.resolve('@babel/preset-react'), { runtime: 'automatic', importSource: 'bare-styled', development: false }]],
     plugins: [plugin, require.resolve('@babel/plugin-transform-modules-commonjs')],
   })
   const requireShim = request => {
-    if (request === 'just-styled' || request === 'just-styled/runtime') return runtime
-    if (request === 'just-styled/runtime/patch') return {}
+    if (request === 'bare-styled' || request === 'bare-styled/runtime') return runtime
+    if (request === 'bare-styled/runtime/patch') return {}
     return require(request)
   }
   const mod = { exports: {} }
@@ -49,7 +49,7 @@ test('styled(Component) forwards its class to the wrapped native node', () => {
   `)
   act(() => createRoot(container).render(React.createElement(App, { color: 'tomato' })))
   const leaf = container.querySelector('#leaf')
-  expect(leaf.className).toMatch(/^sc-[a-z0-9]+-\d js-[a-z0-9]+$/)
+  expect(leaf.className).toMatch(/^sc-[a-z0-9]+-\d bs-[a-z0-9]+$/)
   expect(runtime.getCss()).toMatch(/background:\s*tomato/)
 })
 
@@ -83,7 +83,7 @@ test('key-after-spread in a map resolves via the root createElement fallback', (
   )
   const items = container.querySelectorAll('li')
   expect(items).toHaveLength(2)
-  items.forEach(li => expect(li.className).toMatch(/^sc-[a-z0-9]+-\d js-[a-z0-9]+$/))
+  items.forEach(li => expect(li.className).toMatch(/^sc-[a-z0-9]+-\d bs-[a-z0-9]+$/))
   // distinct colors -> distinct hash classes
   expect(items[0].className.split(' ')[1]).not.toBe(items[1].className.split(' ')[1])
 })

@@ -1,9 +1,9 @@
-// `just-styled/jsx-runtime` — a drop-in replacement for `react/jsx-runtime`
+// `bare-styled/jsx-runtime` — a drop-in replacement for `react/jsx-runtime`
 // that resolves compiled descriptors. Point a bundler's automatic JSX runtime
-// at `just-styled` (e.g. Vite/oxc `jsxImportSource: 'just-styled'`, Babel
+// at `bare-styled` (e.g. Vite/oxc `jsxImportSource: 'bare-styled'`, Babel
 // `importSource`) and every `jsx`/`jsxs` call flows through the wrappers below.
 //
-// This is the deterministic alternative to `just-styled/runtime/patch`: rather
+// This is the deterministic alternative to `bare-styled/runtime/patch`: rather
 // than monkeypatching `react/jsx-runtime`'s exports (which some bundlers freeze
 // or snapshot, so the patch silently no-ops), the compiled app imports these
 // wrapped functions directly. The wrappers delegate to React for everything

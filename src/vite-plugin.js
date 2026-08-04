@@ -1,8 +1,8 @@
-// just-styled Vite plugin (`just-styled/vite`). enforce: 'pre' — runs the
+// bare-styled Vite plugin (`bare-styled/vite`). enforce: 'pre' — runs the
 // transform BEFORE the JSX/TS compiler; pair with
-// react({ jsxImportSource: 'just-styled' }). Engines: 'oxc' (default, fast)
+// react({ jsxImportSource: 'bare-styled' }). Engines: 'oxc' (default, fast)
 // or 'babel' (reference; also the automatic per-file fallback when the fast
-// engine throws). JUST_STYLED_DEBUG=1 logs per-file stats.
+// engine throws). BARE_STYLED_DEBUG=1 logs per-file stats.
 
 const FILE_RE = /\.[jt]sx?$/
 // Requiring a delimiter after `styled` avoids parsing files that merely
@@ -26,7 +26,7 @@ function loadBabel() {
       core = require('@babel/core')
     } catch (e) {
       throw new Error(
-        "just-styled/vite: the Babel engine needs @babel/core (optional peer dependency). Install it, or use engine: 'oxc'."
+        "bare-styled/vite: the Babel engine needs @babel/core (optional peer dependency). Install it, or use engine: 'oxc'."
       )
     }
     const plugin = require('./js-transform')
@@ -63,10 +63,10 @@ async function babelEngine(code, filepath, transformOptions) {
   return { code: result.code, map: result.map }
 }
 
-export function justStyled(options = {}) {
+export function bareStyled(options = {}) {
   const { engine = 'oxc', ...transformOptions } = options
   return {
-    name: 'just-styled',
+    name: 'bare-styled',
     enforce: 'pre',
     async transform(code, id) {
       const filepath = id.split('?', 1)[0]
@@ -93,28 +93,28 @@ export function justStyled(options = {}) {
       if (out == null) out = await babelEngine(code, filepath, transformOptions)
       if (out == null) return null
 
-      if (process.env.JUST_STYLED_DEBUG) {
+      if (process.env.BARE_STYLED_DEBUG) {
         const compiled = (out.code.match(/createStyled\)?\(/g) || []).length
         const precompiled = (out.code.match(/\bcss:\s*"/g) || []).length
         const bailed = (out.stats && out.stats.bailed) || []
         const fnScoped = (out.stats && out.stats.fnScoped) || []
         // eslint-disable-next-line no-console
         console.log(
-          `[just-styled] [${usedEngine}] ${compiled} compiled (${precompiled} build-precompiled)` +
+          `[bare-styled] [${usedEngine}] ${compiled} compiled (${precompiled} build-precompiled)` +
             (bailed.length ? `  BAILED->styled-components: ${bailed.join(', ')}` : '') +
             (fnScoped.length ? `  fn-scoped(skipped): ${fnScoped.join(', ')}` : '') +
             `  ${filepath}`
         )
       }
-      // Mixed rendering in one file (some templates on just-styled, some on
+      // Mixed rendering in one file (some templates on bare-styled, some on
       // styled-components) breaks cascade-tie ordering between the two sheets —
       // always warn, this is how silent layout breakage starts.
       if (out.stats && out.stats.bailed && out.stats.bailed.length) {
         // eslint-disable-next-line no-console
         console.warn(
-          `[just-styled] ${filepath}: ${out.stats.bailed.length} styled template(s) left on real ` +
+          `[bare-styled] ${filepath}: ${out.stats.bailed.length} styled template(s) left on real ` +
             `styled-components (${out.stats.bailed.join(', ')}) — unknown withConfig option or exotic ` +
-            `chain shape. Overrides between these and just-styled components are not order-guaranteed.`
+            `chain shape. Overrides between these and bare-styled components are not order-guaranteed.`
         )
       }
 
@@ -123,4 +123,4 @@ export function justStyled(options = {}) {
   }
 }
 
-export default justStyled
+export default bareStyled

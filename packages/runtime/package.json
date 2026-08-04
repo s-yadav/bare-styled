@@ -1,7 +1,7 @@
 {
-  "name": "@just-styled/runtime",
+  "name": "@bare-styled/runtime",
   "version": "1.0.0",
-  "description": "Runtime sources for just-styled (published as part of the root just-styled package; consume via `just-styled` / `just-styled/runtime`)",
+  "description": "Runtime sources for bare-styled (published as part of the root bare-styled package; consume via `bare-styled` / `bare-styled/runtime`)",
   "license": "MIT",
   "main": "src/index.js",
   "exports": {

@@ -6,7 +6,7 @@ const React = require('react')
 const isPropValid = require('@emotion/is-prop-valid').default
 const engine = require('./engine')
 
-const IS_STYLED = Symbol.for('just-styled')
+const IS_STYLED = Symbol.for('bare-styled')
 const EMPTY = {}
 
 let installed = false

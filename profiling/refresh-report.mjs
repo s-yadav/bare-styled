@@ -45,7 +45,7 @@ function runOnce(profile) {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   const sc = out.match(/^\s+styled-comp\s+([\d.]+)\s+([\d.]+)/m)
-  const js = out.match(/^\s+just-styled\s+([\d.]+)\s+([\d.]+)/m)
+  const js = out.match(/^\s+bare-styled\s+([\d.]+)\s+([\d.]+)/m)
   if (!sc || !js) throw new Error(`could not parse benchmark output for ${profile.id}`)
   return [+sc[1], +sc[2], +js[1], +js[2]] // scMount, scUpdate, jsMount, jsUpdate
 }

@@ -2,13 +2,13 @@
  * @jest-environment jsdom
  *
  * End-to-end render comparison: the SAME widget tree, rendered once through real
- * styled-components and once through just-styled (compiled with the plugin +
+ * styled-components and once through bare-styled (compiled with the plugin +
  * resolved by the runtime). Measures mount and re-render wall-clock in jsdom.
  *
  * jsdom has no layout/paint engine, so this isolates the JS/React side — where
- * just-styled's structural difference lives: styled-components mounts a wrapper
+ * bare-styled's structural difference lives: styled-components mounts a wrapper
  * component (extra fiber + hooks + generateAndInjectStyles) per styled element,
- * while just-styled resolves each to a plain host element. For real
+ * while bare-styled resolves each to a plain host element. For real
  * recalc/layout/paint numbers, use the browser harness (profiling/*.html).
  *
  * Run:  npx jest test/perf/widget.perf.test.js
@@ -19,7 +19,7 @@ import path from 'path'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import plugin from '../../src/js-transform'
-import * as runtime from 'just-styled/runtime'
+import * as runtime from 'bare-styled/runtime'
 
 global.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -33,8 +33,8 @@ const TINT = process.env.WIDGET_TINT || 'few'
 // A widget touching many styled patterns, with STATIC components at row scale
 // (two static cells per row in every mode — the real-world id/label/total-column
 // shape). Escaped \${…} are styled-components interpolations (resolved at
-// flatten by just-styled); {…} are JSX expressions. Deliberately avoids
-// ThemeProvider/context theme (a known just-styled gap); uses a module `theme`
+// flatten by bare-styled); {…} are JSX expressions. Deliberately avoids
+// ThemeProvider/context theme (a known bare-styled gap); uses a module `theme`
 // constant instead, which resolves statically.
 const SOURCE = `
   import React from 'react'
@@ -108,16 +108,16 @@ const SOURCE = `
   }
 `
 
-// Compile the source either as plain styled-components or through just-styled.
-// JS_ENGINE=oxc compiles the just-styled variant with the fast engine instead
+// Compile the source either as plain styled-components or through bare-styled.
+// JS_ENGINE=oxc compiles the bare-styled variant with the fast engine instead
 // of the Babel plugin (verifies oxc output performs identically at runtime).
 const ENGINE = process.env.JS_ENGINE || 'babel'
 const { fastTransform } = require('../../src/fast-transform')
-function buildWidget(useJustStyled) {
-  const filename = path.join(__dirname, (useJustStyled ? 'js' : 'sc') + '-widget.jsx')
+function buildWidget(useBareStyled) {
+  const filename = path.join(__dirname, (useBareStyled ? 'js' : 'sc') + '-widget.jsx')
   let source = SOURCE
   const plugins = [require.resolve('@babel/plugin-transform-modules-commonjs')]
-  if (useJustStyled) {
+  if (useBareStyled) {
     if (ENGINE === 'oxc') source = fastTransform(SOURCE, { filename }).code
     else plugins.unshift(plugin)
   }
@@ -129,8 +129,8 @@ function buildWidget(useJustStyled) {
     plugins,
   })
   const requireShim = request => {
-    if (request === 'just-styled/runtime') return runtime
-    if (request === 'just-styled/runtime/patch') { runtime.installCreateElementPatch(); return {} }
+    if (request === 'bare-styled/runtime') return runtime
+    if (request === 'bare-styled/runtime/patch') { runtime.installCreateElementPatch(); return {} }
     return require(request)
   }
   const mod = { exports: {} }
@@ -175,7 +175,7 @@ function bench(Widget) {
 
 afterEach(() => { runtime.__resetSheet(); document.body.innerHTML = ''; document.head.innerHTML = '' })
 
-test(`widget mount/re-render: styled-components vs just-styled (${ROWS}x${COLS})`, () => {
+test(`widget mount/re-render: styled-components vs bare-styled (${ROWS}x${COLS})`, () => {
   const SCWidget = buildWidget(false)
   const JSWidget = buildWidget(true)
 
@@ -188,11 +188,11 @@ test(`widget mount/re-render: styled-components vs just-styled (${ROWS}x${COLS})
   const pct = (a, b) => (((a - b) / a) * 100).toFixed(0) + '%'
   // eslint-disable-next-line no-console
   console.log(
-    `\njust-styled[${ENGINE}] vs styled-components — widget ${ROWS}x${COLS}, tint=${TINT} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
+    `\nbare-styled[${ENGINE}] vs styled-components — widget ${ROWS}x${COLS}, tint=${TINT} (${sc.nodeCount} DOM nodes), median ms over ${ITERS} iters` +
     `\n                 mount      re-render` +
     `\n  styled-comp   ${sc.mount.toFixed(2).padStart(6)}     ${sc.update.toFixed(2).padStart(6)}` +
-    `\n  just-styled   ${js.mount.toFixed(2).padStart(6)}     ${js.update.toFixed(2).padStart(6)}` +
-    `\n  delta         ${pct(sc.mount, js.mount).padStart(6)}     ${pct(sc.update, js.update).padStart(6)}  (positive = just-styled faster)\n`
+    `\n  bare-styled   ${js.mount.toFixed(2).padStart(6)}     ${js.update.toFixed(2).padStart(6)}` +
+    `\n  delta         ${pct(sc.mount, js.mount).padStart(6)}     ${pct(sc.update, js.update).padStart(6)}  (positive = bare-styled faster)\n`
   )
 
   // Sanity only (not a hard perf gate — jsdom timing is noisy):

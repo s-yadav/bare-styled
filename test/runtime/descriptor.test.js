@@ -1,4 +1,4 @@
-import { IS_STYLED, createStyled, getCss, __resetSheet } from 'just-styled/runtime'
+import { IS_STYLED, createStyled, getCss, __resetSheet } from 'bare-styled/runtime'
 const engine = require('../../packages/runtime/src/engine')
 
 const tag = (strings, ...interps) => engine.cacheParts(strings, interps)
@@ -24,7 +24,7 @@ describe('engine (render-time hash-class resolution)', () => {
     const b = engine.classFor(d, 'color:blue;')
     expect(a).toBe(a2) // same css, same component -> same class, cached
     expect(a).not.toBe(b)
-    expect(a).toMatch(/^js-[a-z0-9]+$/)
+    expect(a).toMatch(/^bs-[a-z0-9]+$/)
     expect((getCss().match(new RegExp('\\.' + a + '\\{', 'g')) || []).length).toBe(1)
     expect(getCss()).toContain('.' + b + '{color:blue;}')
   })

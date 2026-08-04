@@ -7,7 +7,7 @@
 // order guarantee. (File name kept for history; these are ordering tests.)
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createStyled, installCreateElementPatch, uninstallCreateElementPatch, getCss, __resetSheet } from 'just-styled/runtime'
+import { createStyled, installCreateElementPatch, uninstallCreateElementPatch, getCss, __resetSheet } from 'bare-styled/runtime'
 
 global.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -56,7 +56,7 @@ it('dynamic base + static extender: base hash rule before extender rule', () => 
   const el = container.querySelector('div')
   expect(el.className).toContain('sc-pad')
   expect(el.className).toContain('sc-dyn')
-  const jsCls = el.className.split(' ').find(c => c.startsWith('js-'))
+  const jsCls = el.className.split(' ').find(c => c.startsWith('bs-'))
   const css = getCss()
   // whitespace-tolerant: flat dynamic bodies skip stylis, so the resolved
   // body's original spacing is preserved in the rule
@@ -80,7 +80,7 @@ it('extender wins even when its css matches an unrelated component rendered earl
 
   const css = getCss()
   const el = container.querySelector('.sc-ss')
-  const jsClasses = el.className.split(' ').filter(x => x.startsWith('js-'))
+  const jsClasses = el.className.split(' ').filter(x => x.startsWith('bs-'))
   const ruleOf = k => (css.match(new RegExp('\\.' + k + '\\{([^}]*)\\}')) || [])[1]
   const baseCls = jsClasses.find(k => /blue/.test(ruleOf(k) || ''))
   const extCls = jsClasses.find(k => /red/.test(ruleOf(k) || ''))
@@ -100,7 +100,7 @@ it('dynamic composition keeps base-before-extender across prop changes', () => {
 
   const css = getCss()
   const el = container.querySelector('div')
-  const cls = el.className.split(' ').filter(x => x.startsWith('js-'))
+  const cls = el.className.split(' ').filter(x => x.startsWith('bs-'))
   const ruleOf = k => (css.match(new RegExp('\\.' + k + '\\{([^}]*)\\}')) || [])[1]
   // currently-applied base (blue) rule must precede the extender (white bg) rule
   const baseCls = cls.find(k => /blue/.test(ruleOf(k) || ''))
@@ -109,8 +109,8 @@ it('dynamic composition keeps base-before-extender across prop changes', () => {
 
   // stronger: EVERY base-group rule (color:) precedes EVERY extender-group rule (background:)
   const idxs = re => [...css.matchAll(re)].map(m => css.indexOf('.' + m[1] + '{'))
-  const baseIdxs = idxs(/\.(js-[a-z0-9]+)\{color:/g)
-  const extIdxs = idxs(/\.(js-[a-z0-9]+)\{background:/g)
+  const baseIdxs = idxs(/\.(bs-[a-z0-9]+)\{color:/g)
+  const extIdxs = idxs(/\.(bs-[a-z0-9]+)\{background:/g)
   expect(baseIdxs).toHaveLength(2) // two prop values -> two rules per component
   expect(extIdxs).toHaveLength(2)
   expect(Math.max(...baseIdxs)).toBeLessThan(Math.min(...extIdxs))
@@ -148,14 +148,14 @@ describe('styled-components FOLD interop (untransformed .attrs/.withConfig over 
     const el = container.querySelector('div')
     expect(el.getAttribute('data-att')).toBe('yes') // attrs applied by SC
     expect(el.className).toContain('sc-fstack') // folded marker class
-    const js = (el.className.match(/js-[a-z0-9]+/) || [])[0]
+    const js = (el.className.match(/bs-[a-z0-9]+/) || [])[0]
     expect(js).toBeTruthy() // OUR dynamic class, from the componentStyle shim
     expect(getCss()).toContain('.' + js + '{display: flex; gap: 8px;}') // resolved vs props
 
     // prop change -> new variant through the same shim
     render(React.createElement(Wrapped, { gap: 2 }, 'x'))
     const el2 = container.querySelector('div')
-    const js2 = (el2.className.match(/js-[a-z0-9]+/) || [])[0]
+    const js2 = (el2.className.match(/bs-[a-z0-9]+/) || [])[0]
     expect(getCss()).toContain('.' + js2 + '{display: flex; gap: 2px;}')
   })
 

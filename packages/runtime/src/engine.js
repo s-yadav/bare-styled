@@ -278,7 +278,7 @@ function classFor(descriptor, cssBody) {
   }
   const cached = descriptor._cache.get(cssBody)
   if (cached !== undefined) return cached
-  const cls = 'js-' + hash(descriptor.componentId + cssBody)
+  const cls = 'bs-' + hash(descriptor.componentId + cssBody)
   descriptor._cache.set(cssBody, cls)
   // Flat bodies skip stylis: `.cls{body}` IS the finished rule (prefixing off).
   const rules =
@@ -290,11 +290,11 @@ function classFor(descriptor, cssBody) {
 }
 
 // ---- skeleton mode -------------------------------------------------------------
-// The build ships `skeleton` (stylis-compiled rule, `__jsc__` class token +
-// `var(--js-N)` value placeholders) and `vars` (live expressions, in slot
+// The build ships `skeleton` (stylis-compiled rule, `__bsc__` class token +
+// `var(--bs-N)` value placeholders) and `vars` (live expressions, in slot
 // order). Render never runs stylis: resolve the fns, cache by the short joined
 // value string, stitch misses from segments parsed once at definition.
-const SKELETON_TOKEN_RE = /__jsc__|var\(--js-(\d+)\)/g
+const SKELETON_TOKEN_RE = /__bsc__|var\(--bs-(\d+)\)/g
 function parseSkeleton(skeleton) {
   const strings = []
   const slots = []
@@ -316,15 +316,15 @@ function substituteStaticVars(skeleton, vars) {
   const fns = []
   const resolved = vars.map(v => (typeof v === 'function' ? null : resolveValue(v, EMPTY)))
   const out = skeleton.replace(SKELETON_TOKEN_RE, m0 => {
-    if (m0 === '__jsc__') return '__jsc__'
-    const k = +m0.slice(9, -1) // var(--js-K)
+    if (m0 === '__bsc__') return '__bsc__'
+    const k = +m0.slice(9, -1) // var(--bs-K)
     if (resolved[k] !== null) return resolved[k]
     let idx = fns.indexOf(vars[k])
     if (idx === -1) {
       idx = fns.length
       fns.push(vars[k])
     }
-    return 'var(--js-' + idx + ')'
+    return 'var(--bs-' + idx + ')'
   })
   return { skeleton: out, fns }
 }
@@ -343,7 +343,7 @@ function classForVars(descriptor, values) {
   for (let i = 1; i < values.length; i++) key += '\x1f' + values[i]
   const cached = descriptor._cache.get(key)
   if (cached !== undefined) return cached
-  const cls = 'js-' + hash(descriptor.componentId + '\x1f' + key)
+  const cls = 'bs-' + hash(descriptor.componentId + '\x1f' + key)
   descriptor._cache.set(key, cls)
 
   const seg = descriptor._segments

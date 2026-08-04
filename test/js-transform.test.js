@@ -27,11 +27,11 @@ describe('js-transform (decoupled createStyled emit)', () => {
     expect(out).toMatch(/displayName:\s*"Sample__Card"/)
     // module const resolved at build; the prop fn becomes a var slot in a
     // build-compiled skeleton (no stylis at render, ever)
-    expect(out).toMatch(/skeleton:\s*"\.__jsc__\{width:400px;background:red;color:var\(--js-0\);\}"/)
+    expect(out).toMatch(/skeleton:\s*"\.__bsc__\{width:400px;background:red;color:var\(--bs-0\);\}"/)
     expect(out).toMatch(/vars:\s*\[props => props\.color\]/)
     // runtime imports injected
-    expect(out).toMatch(/from ['"]just-styled\/runtime['"]/)
-    expect(out).toMatch(/just-styled\/runtime\/patch/)
+    expect(out).toMatch(/from ['"]bare-styled\/runtime['"]/)
+    expect(out).toMatch(/bare-styled\/runtime\/patch/)
   })
 
   it('pre-compiles a zero-interpolation template at build time (Opt 2)', () => {
@@ -141,7 +141,7 @@ describe('js-transform (decoupled createStyled emit)', () => {
     expect(out).toMatch(/-1"/)
     // single import of createStyled
     expect(out.match(/createStyled as/g) || out.match(/createStyled/g)).toBeTruthy()
-    const imports = out.split('\n').filter(l => l.includes('import') && l.includes('just-styled/runtime"'))
+    const imports = out.split('\n').filter(l => l.includes('import') && l.includes('bare-styled/runtime"'))
     expect(imports.length).toBe(1)
   })
 

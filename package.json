@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
-  "name": "just-styled",
-  "description": "styled-components without the wrapper fiber: a build-time transform (Babel or oxc) + a JSX-runtime that resolves styled components to plain host elements. Transform machinery originally forked from babel-plugin-styled-components.",
+  "version": "0.1.0",
+  "name": "bare-styled",
+  "description": "styled-components without the wrapper fiber: a build-time transform (oxc or Babel) + a JSX runtime that resolves styled components to plain host elements, compiling CSS at build time where possible.",
   "main": "packages/runtime/src/index.js",
   "exports": {
     ".": "./packages/runtime/src/index.js",
@@ -50,7 +50,8 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "rimraf": "^6.0.1",
-    "styled-components": "^6.1.14"
+    "styled-components": "^6.1.14",
+    "pptxgenjs": "^4.0.1"
   },
   "dependencies": {
     "@babel/helper-annotate-as-pure": "^7.25.9",
@@ -66,13 +67,10 @@
   "peerDependencies": {
     "@babel/core": "^7.0.0",
     "react": ">=16.8.0",
-    "styled-components": ">= 2"
+    "styled-components": ">=5"
   },
   "peerDependenciesMeta": {
     "@babel/core": {
-      "optional": true
-    },
-    "styled-components": {
       "optional": true
     }
   },
@@ -102,11 +100,23 @@
       "fixtures\\/[^/]+\\/(output|error)\\.js"
     ],
     "moduleNameMapper": {
-      "^just-styled/runtime/patch$": "<rootDir>/packages/runtime/src/patch.js",
-      "^just-styled/runtime$": "<rootDir>/packages/runtime/src/index.js",
-      "^just-styled/jsx-runtime$": "<rootDir>/packages/runtime/src/jsx-runtime.js",
-      "^just-styled/jsx-dev-runtime$": "<rootDir>/packages/runtime/src/jsx-dev-runtime.js"
+      "^(?:bare-styled|bare-styled)/runtime/patch$": "<rootDir>/packages/runtime/src/patch.js",
+      "^(?:bare-styled|bare-styled)/runtime$": "<rootDir>/packages/runtime/src/index.js",
+      "^(?:bare-styled|bare-styled)/jsx-runtime$": "<rootDir>/packages/runtime/src/jsx-runtime.js",
+      "^(?:bare-styled|bare-styled)/jsx-dev-runtime$": "<rootDir>/packages/runtime/src/jsx-dev-runtime.js"
     }
   },
-  "packageManager": "pnpm@11.1.3"
+  "packageManager": "pnpm@10.34.5",
+  "author": "Sudhanshu Yadav <sudhanshu@prophecy.io>",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/s-yadav/bare-styled.git"
+  },
+  "homepage": "https://github.com/s-yadav/bare-styled#readme",
+  "bugs": {
+    "url": "https://github.com/s-yadav/bare-styled/issues"
+  }
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>just-styled — slides</title>
+<title>bare-styled — slides</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
   :root {
@@ -96,7 +96,7 @@
 <!-- ================= 1. TITLE ================= -->
 <section class="slide dark" data-n="1">
   <div class="dots" style="margin-top:36px"><div class="dot d1">1</div><div class="dot d2">2</div><div class="dot d3">3</div></div>
-  <div style="font-size:84px;font-weight:800;margin-top:90px;letter-spacing:-0.02em">just-styled</div>
+  <div style="font-size:84px;font-weight:800;margin-top:90px;letter-spacing:-0.02em">bare-styled</div>
   <div style="font-size:30px;color:#CADCFC;margin-top:10px">styled-components, <span style="color:#fff;font-weight:700">without components</span></div>
   <div style="font-size:19px;color:#CADCFC;margin-top:40px">Same authoring API. Same styling semantics. <b style="color:#fff">Half the re-render cost.</b></div>
   <div style="position:absolute;bottom:48px;left:72px;color:#7A8BB0;font-size:14px">Compile-time + load-time + render-time optimization of CSS-in-JS</div>
@@ -163,7 +163,7 @@
 <div class="h">&nbsp;&nbsp;&nbsp;&nbsp;&lt;tr&gt;</div>
 <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="w">Styled(Cell)</span> <span class="cm">← wrapper fiber</span></div>
 <div class="h">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;td&gt;</div>
-<div style="margin-top:14px"><span style="color:var(--teal);font-weight:700">just-styled</span></div>
+<div style="margin-top:14px"><span style="color:var(--teal);font-weight:700">bare-styled</span></div>
 <div class="h">&lt;Table&gt;</div>
 <div class="h">&nbsp;&nbsp;&lt;tr&gt;</div>
 <div class="h">&nbsp;&nbsp;&nbsp;&nbsp;&lt;td&gt; <span style="color:var(--teal);font-style:italic">← host fibers only</span></div>
@@ -179,7 +179,7 @@
       <div class="card" style="margin-top:18px;padding:20px 26px;display:flex;gap:26px;align-items:baseline">
         <div><div class="bigstat" style="color:var(--coral)" id="fibers-sc">—</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px">fibers with styled-components</div></div>
         <div style="font-size:26px;color:var(--muted)">vs</div>
-        <div><div class="bigstat" style="color:var(--teal)" id="fibers-js">—</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px">fibers with just-styled</div></div>
+        <div><div class="bigstat" style="color:var(--teal)" id="fibers-js">—</div><div style="font-size:12.5px;color:var(--muted);margin-top:4px">fibers with bare-styled</div></div>
       </div>
       <div class="card" style="margin-top:14px;padding:16px 26px">
         <div style="font-size:14px;color:var(--ink)"><b id="fibers-extra" style="color:var(--coral)">—</b> extra wrapper fibers — created on mount, <b>reconciled on every update</b>, rendering nothing of their own.</div>
@@ -218,7 +218,7 @@
 
 <!-- ================= 6. THE IDEA (remove wrappers) ================= -->
 <section class="slide dark" data-n="6">
-  <h1>The just-styled idea</h1>
+  <h1>The bare-styled idea</h1>
   <div class="sub">Resolve the styled component before React ever sees it. <b style="color:#fff">Press the button.</b></div>
   <div style="display:flex;gap:36px;margin-top:30px;align-items:flex-start">
     <div style="flex:1">
@@ -243,7 +243,7 @@
     <div style="flex:1">
       <div style="background:var(--navy2);border-radius:12px;padding:20px 24px;margin-bottom:14px">
         <b style="font-size:15px">How: the JSX runtime does it</b>
-        <div class="mono" style="font-size:12.5px;color:#CADCFC;margin-top:10px;line-height:1.8">jsxImportSource: 'just-styled'<br>jsx(StyledTd, props)<br>&nbsp;&nbsp;→ <span style="color:var(--code-grn)">jsx('td', {className:'sc-x js-y'})</span></div>
+        <div class="mono" style="font-size:12.5px;color:#CADCFC;margin-top:10px;line-height:1.8">jsxImportSource: 'bare-styled'<br>jsx(StyledTd, props)<br>&nbsp;&nbsp;→ <span style="color:var(--code-grn)">jsx('td', {className:'sc-x js-y'})</span></div>
       </div>
       <div style="background:var(--navy2);border-radius:12px;padding:20px 24px;margin-bottom:14px">
         <b style="font-size:15px">Unchanged, by construction</b>
@@ -377,7 +377,7 @@
 <!-- ================= 11. RESULTS (chart) ================= -->
 <section class="slide" data-n="11">
   <h1>Measured improvement vs styled-components</h1>
-  <div class="sub">Identical trees, production React, median of 12–25 runs — just-styled wins all nine profiles</div>
+  <div class="sub">Identical trees, production React, median of 12–25 runs — bare-styled wins all nine profiles</div>
   <div style="display:flex;gap:30px;margin-top:20px">
     <div style="flex:1.6;position:relative;height:470px"><canvas id="chart"></canvas></div>
     <div style="flex:1;display:flex;flex-direction:column;gap:14px;justify-content:center">
@@ -431,7 +431,7 @@
   <div style="margin-top:44px;display:flex;flex-direction:column;gap:16px;font-size:17px">
     <div><b>React DevTools</b> <span style="color:#CADCFC">— the wrapper components are simply gone from the tree</span></div>
     <div><b>Interaction profiles</b> <span style="color:#CADCFC">— renders and updates on styled-heavy screens</span></div>
-    <div><b>The stylesheet</b> <span style="color:#CADCFC">— one &lt;style data-just-styled&gt;, finished rules, no churn</span></div>
+    <div><b>The stylesheet</b> <span style="color:#CADCFC">— one &lt;style data-bare-styled&gt;, finished rules, no churn</span></div>
   </div>
   <div class="mono" style="position:absolute;bottom:48px;left:72px;color:#7A8BB0;font-size:13px">docs/perf-report.html · JUST_STYLED_INTEGRATION.md · profiling/ harnesses</div>
 </section>

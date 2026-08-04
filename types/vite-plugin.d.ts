@@ -1,7 +1,7 @@
-// Hand-maintained types for `just-styled/vite` (lib/ is plain JS built by
+// Hand-maintained types for `bare-styled/vite` (lib/ is plain JS built by
 // Babel; keep this in sync with src/vite-plugin.js).
 
-export interface JustStyledOptions {
+export interface BareStyledOptions {
   /**
    * Transform engine. 'oxc' (default) parses with oxc-parser (Rust) and edits
    * with magic-string — ~8.5x faster than Babel with differential-tested
@@ -15,8 +15,8 @@ export interface JustStyledOptions {
   displayName?: boolean;
   /**
    * Vendor-prefix build-precompiled rules. Default false, matching both the
-   * just-styled runtime default and styled-components v6. If enabled, also
-   * call `setVendorPrefixes(true)` from `just-styled/runtime` at app startup
+   * bare-styled runtime default and styled-components v6. If enabled, also
+   * call `setVendorPrefixes(true)` from `bare-styled/runtime` at app startup
    * so runtime-compiled rules match.
    */
   vendorPrefixes?: boolean;
@@ -29,15 +29,15 @@ export interface JustStyledOptions {
 }
 
 /**
- * The just-styled Vite plugin: an `enforce: 'pre'` transform that rewrites
- * styled-components tagged templates into just-styled descriptors before the
- * JSX/TS compiler runs. Pair with `react({ jsxImportSource: 'just-styled' })`.
+ * The bare-styled Vite plugin: an `enforce: 'pre'` transform that rewrites
+ * styled-components tagged templates into bare-styled descriptors before the
+ * JSX/TS compiler runs. Pair with `react({ jsxImportSource: 'bare-styled' })`.
  *
  * Typed structurally (name/enforce/transform) rather than as Vite's `Plugin`
  * so this package does not need a vite dependency; the object is assignable
  * to `Plugin` wherever vite's types are in scope.
  */
-export function justStyled(options?: JustStyledOptions): {
+export function bareStyled(options?: BareStyledOptions): {
   name: string;
   enforce: 'pre';
   transform(
@@ -46,4 +46,4 @@ export function justStyled(options?: JustStyledOptions): {
   ): Promise<{ code: string; map: object | null } | null>;
 };
 
-export default justStyled;
+export default bareStyled;

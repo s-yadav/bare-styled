@@ -1,4 +1,4 @@
-# just-styled: design
+# bare-styled: design
 
 **Goal:** styled-components' exact styling model — resolve a template against
 props, hash the result, inject a rule, use the class — but rendered so the
@@ -24,14 +24,14 @@ import. `.attrs` / `.withConfig` chains and the `css` / `keyframes` /
 styled-components). A **zero-interpolation** template is stylis-compiled at
 build time and emitted as `css: "<rule>"` in the config (see Opt 2).
 
-**Runtime** (`packages/runtime`, package `just-styled`):
+**Runtime** (`packages/runtime`, package `bare-styled`):
 
 - `createStyled` returns a `forwardRef` descriptor carrying the cached template
   `parts`, `componentId`, and `styledComponentId === componentId` (so it can be
   a `${Comp}` selector target and a `styled(Descriptor)` target). It is a valid
   element type, so it renders correctly even with no patch installed.
-- The **JSX runtime wrappers** (`just-styled/jsx-runtime`,
-  `just-styled/jsx-dev-runtime`) and the `createElement` patch intercept a
+- The **JSX runtime wrappers** (`bare-styled/jsx-runtime`,
+  `bare-styled/jsx-dev-runtime`) and the `createElement` patch intercept a
   descriptor at element-creation time and resolve it to a host element — so no
   wrapper fiber is added to the tree.
 
@@ -80,7 +80,7 @@ text node. An in-memory `Map` is the source of truth for `getCss()` / SSR.
 ## The discriminator
 
 A genuine descriptor self-references under the shared global symbol
-(`element[Symbol.for('just-styled')] === element`). A real styled component that
+(`element[Symbol.for('bare-styled')] === element`). A real styled component that
 hoists the symbol points at the original descriptor, so the identity check
 excludes it — this survives descriptors carrying a `styledComponentId`.
 
@@ -94,7 +94,7 @@ excludes it — this survives descriptors carrying a `styledComponentId`.
 - **`keyframes` interpolations ARE supported**: the engine duck-types the
   Keyframes object ({ name, rules, getName } — stable across SC v5/v6 and
   across duplicate styled-components copies), injects `@keyframes <name>` into
-  the just-styled sheet once (deduped by name, re-injected after a sheet
+  the bare-styled sheet once (deduped by name, re-injected after a sheet
   reset), and resolves the interpolation to the animation name.
 - **`styled(styledComponent)`** cascade is handled by the sheet's group
   ordering (definition-order groups): base rules always precede extender rules,

@@ -11,7 +11,7 @@ global.requestIdleCallback = cb => cb({ timeRemaining: () => 50, didTimeout: fal
 const React = require('react')
 const { act } = require('react')
 const { createRoot } = require('react-dom/client')
-const { createStyled, getCss, __resetSheet } = require('just-styled/runtime')
+const { createStyled, getCss, __resetSheet } = require('bare-styled/runtime')
 
 global.IS_REACT_ACT_ENVIRONMENT = true
 

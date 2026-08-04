@@ -16,7 +16,7 @@ let fallbackElement = null // text-only element for CSSOM-rejected rules
 function getStyleElement() {
   if (styleElement && styleElement.parentNode) return styleElement
   styleElement = document.createElement('style')
-  styleElement.setAttribute('data-just-styled', '')
+  styleElement.setAttribute('data-bare-styled', '')
   document.head.appendChild(styleElement)
   cssomSheet = styleElement.sheet || null
   return styleElement
@@ -25,7 +25,7 @@ function getStyleElement() {
 function getFallbackElement() {
   if (fallbackElement && fallbackElement.parentNode) return fallbackElement
   fallbackElement = document.createElement('style')
-  fallbackElement.setAttribute('data-just-styled-fallback', '')
+  fallbackElement.setAttribute('data-bare-styled-fallback', '')
   document.head.appendChild(fallbackElement)
   return fallbackElement
 }
@@ -136,7 +136,7 @@ function getCss() {
 
 // Full <style> tag string for embedding in server-rendered HTML.
 function renderStaticStyles() {
-  return '<style data-just-styled>' + getCss() + '</style>'
+  return '<style data-bare-styled>' + getCss() + '</style>'
 }
 
 // Test-only helper. Clears collected rules and removes the injected tag.

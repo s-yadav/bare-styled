@@ -1,4 +1,4 @@
-// `just-styled/jsx-dev-runtime` — dev-mode counterpart of `./jsx-runtime`.
+// `bare-styled/jsx-dev-runtime` — dev-mode counterpart of `./jsx-runtime`.
 // See that file for why this exists (deterministic descriptor resolution
 // through the automatic JSX runtime instead of monkeypatching).
 'use strict'

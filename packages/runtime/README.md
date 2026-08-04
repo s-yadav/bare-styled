@@ -1,6 +1,6 @@
-# just-styled
+# bare-styled
 
-The runtime half of [just-styled](../../README.md). just-styled renders a
+The runtime half of [bare-styled](../../README.md). bare-styled renders a
 `styled` component as a plain host element instead of a wrapper component — so
 you keep styled-components' styling model but drop a React fiber (and its hooks)
 per styled element.
@@ -9,16 +9,16 @@ You don't use this package directly. The plugin rewrites `styled.tag\`…\`` int
 `createStyled(component, { componentId, displayName })\`…\`` (keeping the
 template's interpolations live), and imports this runtime:
 
-- `just-styled/runtime` exports `createStyled`, which returns a lightweight
+- `bare-styled/runtime` exports `createStyled`, which returns a lightweight
   descriptor holding the flattened template.
-- `just-styled/jsx-runtime` + `just-styled/jsx-dev-runtime` are wrapped automatic
-  JSX runtimes (select via `jsxImportSource: 'just-styled'`). `just-styled/runtime/patch`
+- `bare-styled/jsx-runtime` + `bare-styled/jsx-dev-runtime` are wrapped automatic
+  JSX runtimes (select via `jsxImportSource: 'bare-styled'`). `bare-styled/runtime/patch`
   monkey-patches `React.createElement` / the JSX runtimes as an alternative.
   Either way, a descriptor is resolved to a host element at element-creation
   time — no wrapper fiber.
 
 Styles use styled-components' model: at render, the template's prop functions
-are resolved against props into a CSS string, hashed to a `js-<hash>` class, and
+are resolved against props into a CSS string, hashed to a `bs-<hash>` class, and
 injected once (deduped by resolved string). Components whose styles don't depend
 on props resolve once to a single rule under their `componentId` — no per-render
 hashing — and templates with no interpolations at all are compiled at build

@@ -1,4 +1,4 @@
-// Public runtime entry point (`just-styled/runtime`).
+// Public runtime entry point (`bare-styled/runtime`).
 // CommonJS on purpose: this package ships source, and consumers (jest,
 // bundlers, node) all load it without a transform step.
 'use strict'
@@ -10,7 +10,7 @@ const engine = require('./engine')
 
 // Shared global symbol so the patch/jsx runtime recognizes descriptors even
 // across duplicate runtime copies.
-const IS_STYLED = Symbol.for('just-styled')
+const IS_STYLED = Symbol.for('bare-styled')
 
 // Descriptor renders that paid a wrapper fiber (forwardRef fallback).
 // Should stay 0 in a correctly wired app.
@@ -27,7 +27,7 @@ function createStyled(component, config) {
   const ownAttrs = config.attrs || null // .attrs(objOrFn) chain, in application order
   const shouldForwardProp = config.shouldForwardProp // .withConfig custom prop filter
   const forwardProps = config.forwardProps // .withConfig one-call prop shaping (props) => nextProps
-  const skeletonCfg = config.skeleton // build-compiled rule w/ __jsc__ + var(--js-N) tokens
+  const skeletonCfg = config.skeleton // build-compiled rule w/ __bsc__ + var(--bs-N) tokens
   const varsCfg = config.vars // live expressions, in placeholder order
   const tag = function (strings) {
     const interps = Array.prototype.slice.call(arguments, 1)
@@ -46,7 +46,7 @@ function createStyled(component, config) {
       const sub = engine.substituteStaticVars(skeletonCfg, varsCfg || [])
       if (sub.fns.length === 0) {
         isStatic = true
-        css = sub.skeleton.split('__jsc__').join(componentId) // promote: finished rule
+        css = sub.skeleton.split('__bsc__').join(componentId) // promote: finished rule
       } else {
         isStatic = false
         varFns = sub.fns
@@ -83,7 +83,7 @@ function createStyled(component, config) {
     // without being intercepted at element creation (unwrapped runtime,
     // memo()/lazy() unwrapping internally, third-party createElement) — at the
     // cost of a wrapper fiber. Warns once per component in dev.
-    const element = React.forwardRef(function JustStyled(props, ref) {
+    const element = React.forwardRef(function BareStyled(props, ref) {
       fallbackRenders++
       if (
         typeof process !== 'undefined' &&
@@ -93,7 +93,7 @@ function createStyled(component, config) {
         element._warnedFallback = true
         // eslint-disable-next-line no-console
         console.warn(
-          '[just-styled] <' +
+          '[bare-styled] <' +
             (element.displayName || componentId) +
             '> rendered through the forwardRef fallback — a wrapper fiber was created. ' +
             'The element was made outside the wrapped JSX runtime/createElement patch ' +

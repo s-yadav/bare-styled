@@ -181,10 +181,10 @@ describe('skeleton emit parity (value-position residuals)', () => {
     const b = babelRun(SRC)
     const f = fastRun(SRC)
     for (const out of [b, f]) {
-      expect(out).toMatch(/skeleton:\s*"\.__jsc__\{color:var\(--js-0\);border:1px solid #eee;\}"/) // A
-      expect(out).toMatch(/skeleton:\s*"\.__jsc__\{color:var\(--js-0\);\}\.__jsc__:hover\{background:var\(--js-1\);\}"/) // Hover: stylis ran at BUILD
-      expect(out).toMatch(/skeleton:\s*"\.__jsc__\{margin:var\(--js-0\)px var\(--js-1\)px;\}"/) // Multi: both value slots
-      expect(out).toMatch(/@media \(max-width: ?var\(--js-0\)px\)/) // Media: breakpoint slot
+      expect(out).toMatch(/skeleton:\s*"\.__bsc__\{color:var\(--bs-0\);border:1px solid #eee;\}"/) // A
+      expect(out).toMatch(/skeleton:\s*"\.__bsc__\{color:var\(--bs-0\);\}\.__bsc__:hover\{background:var\(--bs-1\);\}"/) // Hover: stylis ran at BUILD
+      expect(out).toMatch(/skeleton:\s*"\.__bsc__\{margin:var\(--bs-0\)px var\(--bs-1\)px;\}"/) // Multi: both value slots
+      expect(out).toMatch(/@media \(max-width: ?var\(--bs-0\)px\)/) // Media: breakpoint slot
       // selector/block-position residuals stay LIVE (structure can change)
       expect(out).toMatch(/SelectorPos = _?createStyled\)?\("u"[^`]*`\$\{p => p\.sel\}/)
       expect(out).toMatch(/BlockPos = _?createStyled\)?\("s"[^`]*`\$\{p => p\.on && 'color: red;'\}/)
@@ -198,7 +198,7 @@ describe('fast transform e2e (render through the runtime)', () => {
     const dom = new JSDOM('<div id="r"></div>')
     global.window = dom.window
     global.document = dom.window.document
-    const runtime = require('just-styled/runtime')
+    const runtime = require('bare-styled/runtime')
 
     const src = `
       import React from 'react'
@@ -218,8 +218,8 @@ describe('fast transform e2e (render through the runtime)', () => {
       plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')],
     })
     const requireShim = r => {
-      if (r === 'just-styled/runtime') return runtime
-      if (r === 'just-styled/runtime/patch') {
+      if (r === 'bare-styled/runtime') return runtime
+      if (r === 'bare-styled/runtime/patch') {
         runtime.installCreateElementPatch()
         return {}
       }
@@ -247,7 +247,7 @@ describe('fast transform e2e (render through the runtime)', () => {
     const dom = new JSDOM('<div id="r"></div>')
     global.window = dom.window
     global.document = dom.window.document
-    const runtime = require('just-styled/runtime')
+    const runtime = require('bare-styled/runtime')
 
     const src = `
       import React from 'react'
@@ -266,8 +266,8 @@ describe('fast transform e2e (render through the runtime)', () => {
       plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')],
     })
     const requireShim = r => {
-      if (r === 'just-styled/runtime') return runtime
-      if (r === 'just-styled/runtime/patch') {
+      if (r === 'bare-styled/runtime') return runtime
+      if (r === 'bare-styled/runtime/patch') {
         runtime.installCreateElementPatch()
         return {}
       }
@@ -280,7 +280,7 @@ describe('fast transform e2e (render through the runtime)', () => {
     const { renderToStaticMarkup } = require('react-dom/server')
     const html = renderToStaticMarkup(React.createElement(mod.exports.App))
     expect(html).toMatch(/class="sc-[a-z0-9]+-0"/) // static box: componentId only
-    expect(html).toMatch(/class="sc-[a-z0-9]+-1 js-[a-z0-9]+"/) // dynamic tint: + hash class
+    expect(html).toMatch(/class="sc-[a-z0-9]+-1 bs-[a-z0-9]+"/) // dynamic tint: + hash class
     expect(runtime.getCss()).toContain('color:#111')
     expect(runtime.getCss()).toMatch(/background:\s*red/)
     runtime.uninstallCreateElementPatch()

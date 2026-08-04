@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>just-styled — performance report</title>
+<title>bare-styled — performance report</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
   :root {
@@ -100,17 +100,17 @@
 <div class="wrap">
 
 <header class="hero">
-  <div class="eyebrow">just-styled · performance report · July 2026</div>
+  <div class="eyebrow">bare-styled · performance report · July 2026</div>
   <h1>Same styled-components API. No wrapper fiber. Half the re-render cost.</h1>
-  <p class="sub">just-styled reimplements the styled-components authoring model but resolves every
+  <p class="sub">bare-styled reimplements the styled-components authoring model but resolves every
   styled component to a plain host element at JSX time, and compiles fully-static templates to
   finished CSS at build time. Benchmarked against real styled-components on identical source,
   it wins all nine measured profiles.</p>
   <div class="meta">jsdom · production React 18 · every figure = median of 3–4 independent benchmark runs, each itself a median of 12–25 iterations · identical DOM trees both ways · styled-components 6.4</div>
   <div class="kpis">
-    <div class="kpi"><div class="v">23%</div><div class="l">avg. faster mount</div></div>
+    <div class="kpi"><div class="v">21%</div><div class="l">avg. faster mount</div></div>
     <div class="kpi"><div class="v">48%</div><div class="l">avg. faster re-render</div></div>
-    <div class="kpi win"><div class="v">67%</div><div class="l">best re-render (high-cardinality dynamic)</div></div>
+    <div class="kpi win"><div class="v">63%</div><div class="l">best re-render (high-cardinality dynamic)</div></div>
     <div class="kpi win"><div class="v">81%</div><div class="l">of components stylis-free at render (skeleton + static)</div></div>
   </div>
 </header>
@@ -118,7 +118,7 @@
 <h2><span class="no">01</span>The core idea</h2>
 <p class="lead">Every styled-components element is <em>two</em> React fibers: a wrapper component
 (which runs hooks, reads theme context, computes styles) and the host element. On a 150-row data
-table that's ~1,200 extra fibers created on mount and reconciled on every render. just-styled
+table that's ~1,200 extra fibers created on mount and reconciled on every render. bare-styled
 removes them entirely — the styled component is resolved <em>before</em> React ever sees it.</p>
 
 <div class="flow">
@@ -142,7 +142,7 @@ removes them entirely — the styled component is resolved <em>before</em> React
   <div class="card">
     <h3>Fiber elimination <span class="tag">mount +21–28%</span></h3>
     <p>Descriptors are resolved in a wrapped automatic JSX runtime
-    (<code>jsxImportSource: 'just-styled'</code>) — deterministic, no monkeypatching. Non-styled
+    (<code>jsxImportSource: 'bare-styled'</code>) — deterministic, no monkeypatching. Non-styled
     elements pay a single type check. The mount gain is flat across every profile and scale because
     it is purely structural: it's the wrapper fibers that are gone.</p>
   </div>
@@ -222,31 +222,31 @@ the work happens, the less the user's device does.</p>
 <h2><span class="no">04</span>Results</h2>
 <p class="lead">Two application-shaped trees — a dashboard (chrome + 150-row data table) and a
 card/table widget — compiled twice from identical source: once through real styled-components, once
-through the just-styled plugin + runtime. Both render the exact same DOM. Lower is better.</p>
+through the bare-styled plugin + runtime. Both render the exact same DOM. Lower is better.</p>
 
 <div class="chart-card">
   <h3>Mount</h3>
   <div class="cap">median ms to mount the full tree, forced synchronous render</div>
   <div class="legend">
-    <span><span class="sw" style="background:#2a78d6"></span>just-styled</span>
+    <span><span class="sw" style="background:#2a78d6"></span>bare-styled</span>
     <span><span class="sw" style="background:#a3a8b0"></span>styled-components</span>
   </div>
-  <div class="chart-box" style="height:430px"><canvas id="mountChart" role="img" aria-label="Mount times across nine profiles; just-styled 6.7 to 31.2 ms, styled-components 8.8 to 41.4 ms."></canvas></div>
+  <div class="chart-box" style="height:430px"><canvas id="mountChart" role="img" aria-label="Mount times across nine profiles; bare-styled 6.7 to 31.2 ms, styled-components 8.8 to 41.4 ms."></canvas></div>
 </div>
 
 <div class="chart-card">
   <h3>Re-render</h3>
   <div class="cap">median ms per state update (tick changes dynamic values across the tree)</div>
   <div class="legend">
-    <span><span class="sw" style="background:#2a78d6"></span>just-styled</span>
+    <span><span class="sw" style="background:#2a78d6"></span>bare-styled</span>
     <span><span class="sw" style="background:#a3a8b0"></span>styled-components</span>
   </div>
-  <div class="chart-box" style="height:430px"><canvas id="updateChart" role="img" aria-label="Re-render times across nine profiles; just-styled 2.3 to 14.9 ms, styled-components 4.6 to 32.6 ms."></canvas></div>
+  <div class="chart-box" style="height:430px"><canvas id="updateChart" role="img" aria-label="Re-render times across nine profiles; bare-styled 2.3 to 14.9 ms, styled-components 4.6 to 32.6 ms."></canvas></div>
 </div>
 
 <div class="chart-card">
   <h3>Improvement by profile</h3>
-  <div class="cap">how much faster just-styled is, as a share of styled-components' time</div>
+  <div class="cap">how much faster bare-styled is, as a share of styled-components' time</div>
   <div class="legend">
     <span><span class="sw" style="background:#2a78d6"></span>mount</span>
     <span><span class="sw" style="background:#1d9e75"></span>re-render</span>
@@ -260,16 +260,16 @@ through the just-styled plugin + runtime. Both render the exact same DOM. Lower 
   </thead>
   <tbody>
     <tr class="group"><td colspan="8">Widget — cards + table; every row carries two static cells (id/total columns) plus tint cells; includes a compiled .attrs input + keyframes dot</td></tr>
-    <tr><td>60×5, few tints</td><td class="num">508</td><td class="num">8.95</td><td class="num">8.82</td><td class="num"><span class="delta">+1%</span></td><td class="num">4.12</td><td class="num">2.02</td><td class="num"><span class="delta">+51%</span></td></tr>
-    <tr><td>60×5, all static</td><td class="num">508</td><td class="num">8.93</td><td class="num">7.05</td><td class="num"><span class="delta">+21%</span></td><td class="num">4.05</td><td class="num">2.03</td><td class="num"><span class="delta">+50%</span></td></tr>
-    <tr><td>60×5, unique tint per cell</td><td class="num">508</td><td class="num">9.55</td><td class="num">6.59</td><td class="num"><span class="delta">+31%</span></td><td class="num">6.29</td><td class="num">2.05</td><td class="num"><span class="delta">+67%</span></td></tr>
-    <tr><td>200×8, few tints</td><td class="num">2,228</td><td class="num">37.83</td><td class="num">28.05</td><td class="num"><span class="delta">+26%</span></td><td class="num">18.81</td><td class="num">11.28</td><td class="num"><span class="delta">+40%</span></td></tr>
-    <tr><td>200×8, all static</td><td class="num">2,228</td><td class="num">38.56</td><td class="num">32.48</td><td class="num"><span class="delta">+16%</span></td><td class="num">19.56</td><td class="num">11.04</td><td class="num"><span class="delta">+44%</span></td></tr>
-    <tr><td>200×8, unique tint per cell</td><td class="num">2,228</td><td class="num">39.36</td><td class="num">27.69</td><td class="num"><span class="delta">+30%</span></td><td class="num">27.29</td><td class="num">11.38</td><td class="num"><span class="delta">+58%</span></td></tr>
+    <tr><td>60×5, few tints</td><td class="num">508</td><td class="num">8.41</td><td class="num">5.99</td><td class="num"><span class="delta">+29%</span></td><td class="num">3.70</td><td class="num">2.38</td><td class="num"><span class="delta">+36%</span></td></tr>
+    <tr><td>60×5, all static</td><td class="num">508</td><td class="num">8.41</td><td class="num">7.80</td><td class="num"><span class="delta">+7%</span></td><td class="num">4.01</td><td class="num">1.94</td><td class="num"><span class="delta">+52%</span></td></tr>
+    <tr><td>60×5, unique tint per cell</td><td class="num">508</td><td class="num">8.69</td><td class="num">7.46</td><td class="num"><span class="delta">+14%</span></td><td class="num">5.45</td><td class="num">2.04</td><td class="num"><span class="delta">+63%</span></td></tr>
+    <tr><td>200×8, few tints</td><td class="num">2,228</td><td class="num">35.25</td><td class="num">27.27</td><td class="num"><span class="delta">+23%</span></td><td class="num">18.46</td><td class="num">11.11</td><td class="num"><span class="delta">+40%</span></td></tr>
+    <tr><td>200×8, all static</td><td class="num">2,228</td><td class="num">36.47</td><td class="num">29.24</td><td class="num"><span class="delta">+20%</span></td><td class="num">18.24</td><td class="num">9.90</td><td class="num"><span class="delta">+46%</span></td></tr>
+    <tr><td>200×8, unique tint per cell</td><td class="num">2,228</td><td class="num">36.73</td><td class="num">26.44</td><td class="num"><span class="delta">+28%</span></td><td class="num">24.98</td><td class="num">10.36</td><td class="num"><span class="delta">+59%</span></td></tr>
     <tr class="group"><td colspan="8">Dashboard — app chrome + sidebar + stat cards + 150-row table; cell mix selects the profile</td></tr>
-    <tr><td>150 rows, mixed cells (real-world)</td><td class="num">1,242</td><td class="num">21.20</td><td class="num">15.95</td><td class="num"><span class="delta">+25%</span></td><td class="num">9.56</td><td class="num">5.81</td><td class="num"><span class="delta">+39%</span></td></tr>
-    <tr><td>150 rows, all-static cells</td><td class="num">1,242</td><td class="num">21.21</td><td class="num">15.33</td><td class="num"><span class="delta">+28%</span></td><td class="num">7.63</td><td class="num">3.89</td><td class="num"><span class="delta">+49%</span></td></tr>
-    <tr><td>150 rows, all-dynamic cells</td><td class="num">1,242</td><td class="num">22.10</td><td class="num">16.41</td><td class="num"><span class="delta">+26%</span></td><td class="num">10.56</td><td class="num">6.60</td><td class="num"><span class="delta">+38%</span></td></tr>
+    <tr><td>150 rows, mixed cells (real-world)</td><td class="num">1,242</td><td class="num">19.28</td><td class="num">14.98</td><td class="num"><span class="delta">+22%</span></td><td class="num">8.29</td><td class="num">4.88</td><td class="num"><span class="delta">+41%</span></td></tr>
+    <tr><td>150 rows, all-static cells</td><td class="num">1,242</td><td class="num">18.45</td><td class="num">14.66</td><td class="num"><span class="delta">+21%</span></td><td class="num">7.66</td><td class="num">3.65</td><td class="num"><span class="delta">+52%</span></td></tr>
+    <tr><td>150 rows, all-dynamic cells</td><td class="num">1,242</td><td class="num">20.71</td><td class="num">16.11</td><td class="num"><span class="delta">+22%</span></td><td class="num">9.61</td><td class="num">5.72</td><td class="num"><span class="delta">+40%</span></td></tr>
   </tbody>
 </table>
 
@@ -321,7 +321,7 @@ Components using <code>.attrs</code>/<code>.withConfig</code> or context theme i
 real styled-components in both harnesses, exactly as they do in production.</p>
 
 <footer>
-  just-styled · benchmarks reproducible via <code>npx jest test/perf</code> (env: DASH_MODE, WIDGET_TINT, *_ROWS, *_ITERS)
+  bare-styled · benchmarks reproducible via <code>npx jest test/perf</code> (env: DASH_MODE, WIDGET_TINT, *_ROWS, *_ITERS)
   and <code>profiling/dashboard|widget/harness.html</code> in a browser · July 2026
 </footer>
 
@@ -333,10 +333,10 @@ const LABELS = [
   'widget 200×8 · few', 'widget 200×8 · static', 'widget 200×8 · unique',
   'dash 150r · mixed', 'dash 150r · static', 'dash 150r · dynamic'
 ];
-const JS = { mount: [8.82, 7.05, 6.59, 28.05, 32.48, 27.69, 15.95, 15.33, 16.41],
-             update: [2.02, 2.03, 2.05, 11.28, 11.04, 11.38, 5.81, 3.89, 6.60] };
-const SC = { mount: [8.95, 8.93, 9.55, 37.83, 38.56, 39.36, 21.20, 21.21, 22.10],
-             update: [4.12, 4.05, 6.29, 18.81, 19.56, 27.29, 9.56, 7.63, 10.56] };
+const JS = { mount: [5.99, 7.80, 7.46, 27.27, 29.24, 26.44, 14.98, 14.66, 16.11],
+             update: [2.38, 1.94, 2.04, 11.11, 9.90, 10.36, 4.88, 3.65, 5.72] };
+const SC = { mount: [8.41, 8.41, 8.69, 35.25, 36.47, 36.73, 19.28, 18.45, 20.71],
+             update: [3.70, 4.01, 5.45, 18.46, 18.24, 24.98, 8.29, 7.66, 9.61] };
 const dMount = SC.mount.map((s, i) => Math.round((s - JS.mount[i]) / s * 100));
 const dUpdate = SC.update.map((s, i) => Math.round((s - JS.update[i]) / s * 100));
 
@@ -347,7 +347,7 @@ function bars(id, a, b) {
   new Chart(document.getElementById(id), {
     type: 'bar',
     data: { labels: LABELS, datasets: [
-      { label: 'just-styled', data: a, backgroundColor: '#2a78d6', borderRadius: 4, maxBarThickness: 15 },
+      { label: 'bare-styled', data: a, backgroundColor: '#2a78d6', borderRadius: 4, maxBarThickness: 15 },
       { label: 'styled-components', data: b, backgroundColor: '#a3a8b0', borderRadius: 4, maxBarThickness: 15 }
     ]},
     options: {
