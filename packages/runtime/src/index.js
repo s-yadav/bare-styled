@@ -120,6 +120,12 @@ function createStyled(component, config) {
     element._attrsAll = attrsAll // base-first flat attrs list (null when none)
     element._sfp = sfp // effective shouldForwardProp for the chain
     element._fwd = fwd // effective forwardProps for the chain (wins over _sfp)
+    // Own cache/registration stamps BEFORE setPrototypeOf. Extenders inherit
+    // the base via the prototype link for statics passthrough; without own
+    // _gen/_regGen they would read the base's epoch, skip creating their own
+    // Map, and share Base._cache (cross-extender class collisions).
+    element._gen = undefined
+    element._regGen = undefined
     if (displayName) element.displayName = displayName
     element.toString = function () {
       return '.' + componentId
