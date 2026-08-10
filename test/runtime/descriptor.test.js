@@ -166,6 +166,20 @@ describe('createStyled descriptor shape', () => {
     expect(Wrapped.customStatic).toBe(42)
   })
 
+  it('_gen/_regGen are OWN properties, never inherited through the prototype link', () => {
+    // Regression for the base/extender cache-collision bug: the prototype
+    // link (for statics passthrough) must not let an extender's _gen/_regGen
+    // read fall through to the base's — that read decides whether the
+    // extender creates its OWN style-class cache Map, or ends up reading and
+    // MUTATING the base's shared one (colliding with sibling extenders).
+    const Base = createStyled('div', { componentId: 'sc-own-base' })`color: red;`
+    const Ext = createStyled(Base, { componentId: 'sc-own-ext' })`padding: 4px;`
+    expect(Object.prototype.hasOwnProperty.call(Ext, '_gen')).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(Ext, '_regGen')).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(Base, '_gen')).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(Base, '_regGen')).toBe(true)
+  })
+
   it('statics passthrough survives descriptor-over-descriptor chains', () => {
     function Dropdown(props) { return null }
     Dropdown.Item = function Item(props) { return null }

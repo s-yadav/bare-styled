@@ -186,6 +186,84 @@ describe('skeleton mode (build-compiled structure, render = substitution)', () =
   })
 })
 
+describe('cache collision regression (sibling extenders of a rendered base)', () => {
+  // Bug: extenders link to their base via Object.setPrototypeOf for statics
+  // passthrough. The style-class cache guard reads `descriptor._gen` — if an
+  // extender has no OWN `_gen`, that read falls through the prototype chain
+  // to the base's. Once the base itself has rendered (stamping ITS OWN _gen
+  // at the current sheet generation), every extender's inherited read already
+  // matches, so the guard never creates the extender's own cache Map and
+  // instead mutates the BASE's shared Map. Two unrelated sibling extenders
+  // that resolve to the same cache key then steal each other's class — e.g. a
+  // full-width card rendering with a small radio button's styles. The fix
+  // (packages/runtime/src/index.js) stamps `_gen`/`_regGen` as OWN properties
+  // on every descriptor before the prototype link is made.
+
+  it('classFor: siblings with an identical resolved css body still get their own class + rule', () => {
+    // Base is itself dynamic so it seeds ITS OWN _gen/_cache at the current
+    // sheet generation before Card/Radio ever run — the exact precondition
+    // for the collision. A single render mounts all three so the base
+    // resolves (top-down) before its two extenders.
+    const Base = createStyled('div', { componentId: 'sc-cc-base' })`opacity: ${p => p.o};`
+    const Card = createStyled(Base, { componentId: 'sc-cc-card' })`width: ${p => p.w};`
+    const Radio = createStyled(Base, { componentId: 'sc-cc-radio' })`width: ${p => p.w};`
+    // Same resolved css body ("width: 20px;") on both siblings — the shared-cache
+    // key that used to collide.
+    render(React.createElement('div', null,
+      React.createElement(Base, { o: 1, key: 0 }, 'base'),
+      React.createElement(Card, { w: '20px', key: 1 }, 'card'),
+      React.createElement(Radio, { w: '20px', key: 2 }, 'radio')))
+
+    // className is the full chain (base's own class + the extender's own),
+    // since styled(StyledComponent) keeps both rules — the extender's own
+    // componentId/hash pair are always the LAST two tokens.
+    const cardTokens = container.querySelector('.sc-cc-card').className.split(' ')
+    const radioTokens = container.querySelector('.sc-cc-radio').className.split(' ')
+    const cardCls = cardTokens[cardTokens.length - 1]
+    const radioCls = radioTokens[radioTokens.length - 1]
+    expect(cardTokens[cardTokens.length - 2]).toBe('sc-cc-card')
+    expect(radioTokens[radioTokens.length - 2]).toBe('sc-cc-radio')
+    expect(cardCls).not.toBe(radioCls) // neither stole the other's cached class
+    expect(getCss()).toContain('.' + cardCls + '{width: 20px;}')
+    expect(getCss()).toContain('.' + radioCls + '{width: 20px;}')
+  })
+
+  it('classForVars (skeleton mode): siblings with identical values resolve their OWN structure, not each other\'s', () => {
+    const Base = createStyled('div', {
+      componentId: 'sc-cc-base2',
+      skeleton: '.__bsc__{opacity:var(--bs-0);}',
+      vars: [p => p.o],
+    })``
+    // Structurally very different siblings (full-width card vs. tiny radio dot)
+    // that happen to resolve the SAME interpolated value ("blue") — exactly the
+    // reported symptom: a card rendering with a radio button's dimensions.
+    const Card = createStyled(Base, {
+      componentId: 'sc-cc-card2',
+      skeleton: '.__bsc__{width:100%;border-color:var(--bs-0);}',
+      vars: [p => (p.selected ? 'blue' : 'gray')],
+    })``
+    const Radio = createStyled(Base, {
+      componentId: 'sc-cc-radio2',
+      skeleton: '.__bsc__{width:12px;border-color:var(--bs-0);}',
+      vars: [p => (p.selected ? 'blue' : 'gray')],
+    })``
+    render(React.createElement('div', null,
+      React.createElement(Base, { o: 1, key: 0 }, 'base'),
+      React.createElement(Card, { selected: true, key: 1 }, 'card'),
+      React.createElement(Radio, { selected: true, key: 2 }, 'radio')))
+
+    const cardTokens = container.querySelector('.sc-cc-card2').className.split(' ')
+    const radioTokens = container.querySelector('.sc-cc-radio2').className.split(' ')
+    const cardCls = cardTokens[cardTokens.length - 1]
+    const radioCls = radioTokens[radioTokens.length - 1]
+    expect(cardTokens[cardTokens.length - 2]).toBe('sc-cc-card2')
+    expect(radioTokens[radioTokens.length - 2]).toBe('sc-cc-radio2')
+    expect(cardCls).not.toBe(radioCls)
+    expect(getCss()).toContain('.' + cardCls + '{width:100%;border-color:blue;}') // card keeps its OWN structure
+    expect(getCss()).toContain('.' + radioCls + '{width:12px;border-color:blue;}') // radio keeps its OWN structure
+  })
+})
+
 describe('native .attrs / .withConfig (styled-components semantics)', () => {
   it('object attrs land on the host; incoming props are overridden by attrs', () => {
     const Field = createStyled('input', { componentId: 'sc-att1', attrs: [{ type: 'text' }] })`border: 1px solid #ccc;`
