@@ -75,12 +75,25 @@ function hash(str) {
 
 // Flatten the tagged template once at definition time (styled-components'
 // css() bakes static parts into strings; functions survive for render).
-// GOTCHA: css() can THROW when interpolated objects come from a DIFFERENT
-// styled-components copy (instanceof Keyframes misses → toString throws).
-// A template must never crash module eval — fall back to a naive interleave;
-// resolveValue handles every chunk type, incl. foreign keyframes (duck-typed).
+// GOTCHA: css() mishandles objects from a DIFFERENT styled-components copy
+// (instanceof Keyframes misses). Depending on the SC version it either THROWS
+// ("interpolating a keyframe declaration into an untagged string") or —
+// worse, silently — serializes the keyframes object as a style object
+// ("name: x;rules: …;"). Neither is recoverable after the fact, so any
+// interpolation that duck-types as keyframes routes around css() entirely;
+// the interleave path resolves it correctly (resolveValue is duck-typed).
+// The try/catch stays for the throwing versions and any other exotic input —
+// a template must never crash module eval.
 function cacheParts(strings, interps) {
-  if (scCss) {
+  let foreign = false
+  for (let i = 0; i < interps.length; i++) {
+    const v = interps[i]
+    if (v !== null && typeof v === 'object' && isKeyframes(v)) {
+      foreign = true
+      break
+    }
+  }
+  if (scCss && !foreign) {
     try {
       return scCss(strings, ...interps)
     } catch (e) {

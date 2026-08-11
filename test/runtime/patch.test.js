@@ -584,3 +584,4 @@ describe('forwardRef fallback detection (fiber-win diagnostics)', () => {
     expect(__getFallbackRenders()).toBe(before) // resolved at creation — no fiber
   })
 })
+

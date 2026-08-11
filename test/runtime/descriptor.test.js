@@ -196,3 +196,4 @@ describe('createStyled descriptor shape', () => {
     expect(String(B)).toBe('.sc-b')
   })
 })
+

@@ -126,6 +126,8 @@ function createStyled(component, config) {
     // Map, and share Base._cache (cross-extender class collisions).
     element._gen = undefined
     element._regGen = undefined
+    // same hazard: lazily stamped, read via proto
+    element._warnedFallback = false 
     if (displayName) element.displayName = displayName
     element.toString = function () {
       return '.' + componentId
