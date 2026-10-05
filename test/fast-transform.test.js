@@ -148,6 +148,32 @@ describe('fast transform vs babel plugin (differential)', () => {
     expect(out).toContain('import "my-runtime/patch"')
   })
 
+  it('hmr: ids track each template css, identically in both engines', () => {
+    const src = `import styled from 'styled-components'
+const GAP = '4px'
+const A = styled.div\`color: red;\`
+const B = styled.span\`\${A} { color: blue; }\`
+const C = styled.p\`margin: 0;\`
+const D = styled.b\`gap: \${GAP};\`
+const E = styled.i\`\${p => p.on && 'color: red;'}\``
+    const ids = code => Object.keys(extractConfigs(code))
+    const hmrIds = code => ids(fastRun(code, { hmr: true }))
+
+    const [a, b, c, d, e] = hmrIds(src)
+    expect(a).toMatch(/^sc-[a-z0-9]+-0-[a-z0-9]+$/)
+    expect(ids(babelRun(src, { hmr: true }))).toEqual([a, b, c, d, e])
+
+    const [a2, b2, c2] = hmrIds(src.replace('color: red', 'color: green'))
+    expect(a2).not.toBe(a) // edited template: new id, so its new rule registers
+    expect(b2).not.toBe(b) // same-file ${A} selector baked A's id into B's css
+    expect(c2).toBe(c) // unrelated template keeps its id
+
+    expect(hmrIds(src.replace("'4px'", "'8px'"))[3]).not.toBe(d) // resolved module const
+    expect(hmrIds(src.replace('p.on', 'p.active'))[4]).not.toBe(e) // live template
+
+    expect(ids(fastRun(src))).toEqual(ids(fastRun(src.replace('color: red', 'color: green'))))
+  })
+
   it('skips function-scope styled templates (conservative; babel engine covers them)', () => {
     const src = `
       import styled from 'styled-components'

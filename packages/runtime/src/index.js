@@ -39,6 +39,7 @@ function createStyled(component, config) {
     let css = precompiled
     let varFns = null
     let segments = null
+    let varSeed = null
     let isStatic
     if (precompiled != null) {
       isStatic = true
@@ -51,6 +52,7 @@ function createStyled(component, config) {
         isStatic = false
         varFns = sub.fns
         segments = engine.parseSkeleton(sub.skeleton)
+        varSeed = engine.skeletonSeed(componentId, sub.skeleton)
       }
     } else {
       parts = engine.cacheParts(strings, interps)
@@ -115,6 +117,7 @@ function createStyled(component, config) {
     element.css = css
     element._varFns = varFns // skeleton mode: render-time value fns (placeholder order)
     element._segments = segments // skeleton mode: precompiled rule segments
+    element._varSeed = varSeed // skeleton mode: value-class hash seed
     element.isStatic = isStatic
     element.target = component
     element._attrsAll = attrsAll // base-first flat attrs list (null when none)

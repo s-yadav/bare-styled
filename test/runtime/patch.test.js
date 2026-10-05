@@ -186,6 +186,53 @@ describe('skeleton mode (build-compiled structure, render = substitution)', () =
   })
 })
 
+// An imported value (e.g. a theme token) changed; the module source did not.
+describe('HMR: same componentId, changed imported value', () => {
+  const lastIndex = (css, s) => css.lastIndexOf(s)
+
+  it('promoted skeleton: the re-evaluated rule is added after the old one', () => {
+    const make = color =>
+      createStyled('div', {
+        componentId: 'sc-hmr-sk',
+        skeleton: '.__bsc__{color:var(--bs-0);}',
+        vars: [color],
+      })``
+    render(React.createElement(make('gray'), null, 'a'))
+    render(React.createElement(make('black'), null, 'b'))
+    const css = getCss()
+    expect(lastIndex(css, '.sc-hmr-sk{color:black;}')).toBeGreaterThan(
+      lastIndex(css, '.sc-hmr-sk{color:gray;}')
+    )
+  })
+
+  it('live static template: the re-evaluated rule is added after the old one', () => {
+    const make = color => createStyled('div', { componentId: 'sc-hmr-live' })`color: ${color};`
+    render(React.createElement(make('gray'), null, 'a'))
+    render(React.createElement(make('black'), null, 'b'))
+    const css = getCss()
+    expect(lastIndex(css, '.sc-hmr-live{color:black;}')).toBeGreaterThan(
+      lastIndex(css, '.sc-hmr-live{color:gray;}')
+    )
+  })
+
+  it('mixed skeleton: a changed static var gives a new value class', () => {
+    const fn = p => p.c
+    const make = border =>
+      createStyled('div', {
+        componentId: 'sc-hmr-mix',
+        skeleton: '.__bsc__{border:1px solid var(--bs-0);color:var(--bs-1);}',
+        vars: [border, fn],
+      })``
+    const classOf = () => container.querySelector('div').className.match(/bs-[a-z0-9]+/)[0]
+    render(React.createElement(make('#eee'), { c: 'red' }, 'a'))
+    const before = classOf()
+    render(React.createElement(make('#000'), { c: 'red' }, 'b'))
+    const after = classOf()
+    expect(after).not.toBe(before)
+    expect(getCss()).toContain('.' + after + '{border:1px solid #000;color:red;}')
+  })
+})
+
 describe('cache collision regression (sibling extenders of a rendered base)', () => {
   // Bug: extenders link to their base via Object.setPrototypeOf for statics
   // passthrough. The style-class cache guard reads `descriptor._gen` — if an

@@ -51,3 +51,12 @@ it('still works when the same descriptor renders after a __resetSheet', () => {
   render(React.createElement(Box, null, '2'))
   expect(getCss()).toMatch(/\.sc-idle2\{color:teal;\}/)
 })
+
+it('does not hand a precomputed rule to a re-evaluated descriptor with the same id', () => {
+  // Precomputed but never rendered, then re-evaluated under the same id.
+  createStyled('div', { componentId: 'sc-idle3' })`color: ${'gray'};`
+  const Box = createStyled('div', { componentId: 'sc-idle3' })`color: ${'black'};`
+  render(React.createElement(Box, null, 'x'))
+  expect(getCss()).toContain('.sc-idle3{color:black;}')
+  expect(getCss()).not.toContain('color:gray')
+})

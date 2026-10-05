@@ -26,6 +26,11 @@ export interface BareStyledOptions {
   runtimeImportPath?: string;
   /** Prefix for generated componentIds (multi-app disambiguation). */
   namespace?: string;
+  /**
+   * Append a css hash to componentIds so edited styles re-register on HMR.
+   * Default: on for `vite serve` with HMR, off for builds.
+   */
+  hmr?: boolean;
 }
 
 /**
@@ -40,6 +45,10 @@ export interface BareStyledOptions {
 export function bareStyled(options?: BareStyledOptions): {
   name: string;
   enforce: 'pre';
+  configResolved(config: {
+    command: 'build' | 'serve';
+    server: { hmr?: unknown };
+  }): void;
   transform(
     code: string,
     id: string

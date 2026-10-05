@@ -13,7 +13,8 @@ import { createScanner } from './utils/value-positions'
 import getName from './utils/getName'
 import prefixLeadingDigit from './utils/prefixDigit'
 import { getFileHash } from './utils/fileHash'
-import { useDisplayName, useRuntimeImportPath, useMeaninglessFileNames, useNamespace, useVendorPrefixes } from './utils/options'
+import hash from './utils/hash'
+import { useDisplayName, useHmr, useRuntimeImportPath, useMeaninglessFileNames, useNamespace, useVendorPrefixes } from './utils/options'
 
 const CREATE_IMPORT_NAME = 'bare-styled-create-name'
 const PATCH_IMPORT_ADDED = 'bare-styled-patch-added'
@@ -305,10 +306,14 @@ const getDisplayName = (t, componentPath, state) => {
     : prefixLeadingDigit(blockName)
 }
 
-const nextComponentId = state => {
+// Resolved css, not source: a `${Other}` selector or module const can change it.
+const nextComponentId = (templatePath, analysis, state) => {
   const id = state.file.get(POSITION) || 0
   state.file.set(POSITION, id + 1)
-  return `${useNamespace(state)}sc-${getFileHash(state)}-${id}`
+  const base = `${useNamespace(state)}sc-${getFileHash(state)}-${id}`
+  if (!useHmr(state)) return base
+  const { start, end } = templatePath.node
+  return base + '-' + hash(analysis.raw ?? state.file.code.slice(start, end))
 }
 
 export default function ({ types: t }) {
@@ -322,8 +327,10 @@ export default function ({ types: t }) {
         if (!parsed) return // helpers / exotic shapes / unknown withConfig -> untouched
         const { componentNode, attrs, shouldForwardProp, forwardProps } = parsed
 
+        const analysis = analyzeTemplate(t, path, state)
+
         // withConfig componentId wins over the minted one (SC semantics).
-        const componentId = parsed.componentId || nextComponentId(state)
+        const componentId = parsed.componentId || nextComponentId(path, analysis, state)
 
         // Record `const Name = styled...` -> componentId (keyed by declarator
         // node so shadowing can't confuse later `${Name}` resolution).
@@ -382,7 +389,6 @@ export default function ({ types: t }) {
         // .__bsc__ token and ships `skeleton` + `vars` (live expressions in
         // placeholder order); live keeps the template for the runtime flatten.
         const mw = middleware(useVendorPrefixes(state) ? [prefixer, stringify] : [stringify])
-        const analysis = analyzeTemplate(t, path, state)
         if (analysis.kind === 'static') {
           const compiled = serialize(compile('.' + componentId + '{' + analysis.raw + '}'), mw)
           configProps.push(t.objectProperty(t.identifier('css'), t.stringLiteral(compiled)))

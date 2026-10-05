@@ -426,6 +426,7 @@ export function fastTransform(code, options = {}) {
     runtimeImportPath = 'bare-styled/runtime',
     namespace = '',
     meaninglessFileNames = ['index'],
+    hmr = false,
   } = options
 
   ensureParser()
@@ -478,8 +479,13 @@ export function fastTransform(code, options = {}) {
     // Function-scope templates need real scope analysis — leave them be.
     if (t.fnDepth > 0) continue
 
+    const analysis = analyzeTemplate(t.quasi, mkCtx(true))
+
     // withConfig componentId wins over the minted one (SC semantics).
-    const componentId = t.cfgComponentId || `${nsPrefix}sc-${fileHash}-${position++}`
+    const componentId =
+      t.cfgComponentId ||
+      `${nsPrefix}sc-${fileHash}-${position++}` +
+        (hmr ? '-' + hash(analysis.raw ?? code.slice(t.node.start, t.node.end)) : '')
     const props = ['componentId: ' + JSON.stringify(componentId)]
 
     if (useDisplayName) {
@@ -513,7 +519,6 @@ export function fastTransform(code, options = {}) {
     // Build-time compilation, identical policy to the Babel plugin:
     // static -> `css`; skeleton -> `skeleton` + `vars`; else live.
     const mw = middleware(vendorPrefixes ? [prefixer, stringify] : [stringify])
-    const analysis = analyzeTemplate(t.quasi, mkCtx(true))
     if (analysis.kind === 'static') {
       const compiled = serialize(compile('.' + componentId + '{' + analysis.raw + '}'), mw)
       props.push('css: ' + JSON.stringify(compiled))

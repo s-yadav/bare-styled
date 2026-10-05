@@ -68,6 +68,11 @@ export function bareStyled(options = {}) {
   return {
     name: 'bare-styled',
     enforce: 'pre',
+    configResolved(config) {
+      if (options.hmr === undefined) {
+        transformOptions.hmr = config.command === 'serve' && config.server.hmr !== false
+      }
+    },
     async transform(code, id) {
       const filepath = id.split('?', 1)[0]
       if (!FILE_RE.test(filepath)) return null

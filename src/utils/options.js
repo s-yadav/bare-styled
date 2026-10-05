@@ -20,6 +20,9 @@ export const useNamespace = state => {
   return namespace ? `${namespace}__` : ''
 }
 
+// Dev server only: appends a css hash to componentIds so edits re-register.
+export const useHmr = state => getOption(state, 'hmr', false)
+
 export const useRuntimeImportPath = state =>
   getOption(state, 'runtimeImportPath', 'bare-styled/runtime')
 

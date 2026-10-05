@@ -154,7 +154,9 @@ The raw fast engine is exposed as `fastTransform(code, { filename })` from
 `bare-styled/fast-transform` for custom bundler integrations. Options for the
 plugin and both engines: `engine` (`'oxc'` default | `'babel'`), `displayName`
 (default `true`), `vendorPrefixes` (default `false`), `topLevelImportPaths`,
-`runtimeImportPath`, `namespace`.
+`runtimeImportPath`, `namespace`, `hmr` (mixes a hash of each template's css into
+its componentId so edited styles re-register on HMR; the Vite plugin turns it
+on for `vite serve`, off for builds).
 
 ## Development
 
